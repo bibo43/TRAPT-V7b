@@ -1,0 +1,1677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>TRAPT</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #1a5c2a; color: #ffffff; font-family: 'Courier New', monospace; font-weight: bold; font-size: 17px; touch-action: manipulation; }
+
+#turn-banner {
+  position: fixed; top: 18%; left: 50%;
+  transform: translate(-50%, -50%) scale(0.75);
+  background: rgba(250, 246, 234, 0.95);
+  border: 3px solid #ffffff;
+  padding: 16px 34px;
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: clamp(18px, 5.5vw, 30px);
+  letter-spacing: 4px;
+  color: #33200f;
+  z-index: 200;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  text-align: center;
+  box-shadow: 0 6px 26px rgba(0,0,0,0.28);
+  white-space: nowrap;
+}
+#turn-banner.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+
+#pregame {
+  position: fixed; inset: 0; background: #1a5c2a;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 100; gap: 16px; padding: 24px; overflow-y: auto;
+}
+#pregame h1 { font-size: clamp(32px, 10vw, 48px); letter-spacing: 8px; color: #ffffff; text-shadow: 0 0 30px rgba(255,255,255,0.4); }
+#pregame p.sub { font-size: clamp(11px, 3vw, 14px); color: #ccffcc; letter-spacing: 2px; font-weight: bold; }
+
+.btn {
+  background: transparent; border: 1px solid #ffffff; color: #ffffff;
+  padding: 14px 32px; font-size: clamp(13px, 3.5vw, 15px); letter-spacing: 3px; cursor: pointer;
+  font-family: 'Courier New', monospace; font-weight: bold; transition: all 0.2s;
+  width: min(280px, 85vw); text-align: center;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn:hover, .btn:active { background: #ffffff; color: #1a5c2a; }
+.btn-dim { border-color: #aaddaa; color: #ccffcc; }
+.btn-dim:hover, .btn-dim:active { background: #aaddaa; color: #1a5c2a; }
+
+#instructions-panel {
+  display: none; width: min(520px, 90vw); background: #123d1c; border: 1px solid #4a9a5a;
+  padding: 20px; font-size: clamp(12px, 3.2vw, 14px); line-height: 1.8; color: #ffffff;
+  max-height: 50vh; overflow-y: auto; font-weight: bold;
+}
+#instructions-panel h2 { color: #ffffff; margin-bottom: 12px; letter-spacing: 2px; }
+
+#modeDiv { display: none; flex-direction: column; gap: 10px; width: min(280px, 85vw); }
+#diffDiv  { display: none; flex-direction: column; gap: 10px; width: min(280px, 85vw); align-items: center; }
+#diffDiv p { font-size: clamp(11px, 3vw, 14px); letter-spacing: 2px; color: #ccffcc; font-weight: bold; }
+#firstDiv { display: none; flex-direction: column; gap: 10px; width: min(280px, 85vw); align-items: center; }
+#firstDiv p { font-size: clamp(11px, 3vw, 14px); letter-spacing: 2px; color: #ccffcc; font-weight: bold; }
+
+/* NEXT-GAME "WHO GOES FIRST?" MODAL */
+#firstModal {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.68);
+  display: none; align-items: center; justify-content: center;
+  z-index: 300; padding: 24px;
+}
+#firstModal.show { display: flex; }
+#firstModal .modal-card {
+  background: #123d1c; border: 3px solid #ffffff;
+  padding: 28px 24px; display: flex; flex-direction: column;
+  align-items: center; gap: 14px; width: min(340px, 90vw);
+  box-shadow: 0 0 40px rgba(0,0,0,0.75); text-align: center;
+}
+#firstModal h2 { font-size: clamp(20px, 6vw, 26px); letter-spacing: 4px; }
+#firstModal p { font-size: clamp(11px, 3vw, 14px); letter-spacing: 2px; color: #ccffcc; font-weight: bold; }
+#firstModal .btn { width: 100%; }
+
+#game { display: none; min-height: 100vh; padding: 10px; }
+#title { text-align: center; font-size: clamp(16px, 5vw, 22px); letter-spacing: 6px; color: #ffffff; padding: 8px 0; font-weight: bold; }
+
+#layout {
+  display: flex; gap: 14px; justify-content: center;
+  align-items: flex-start; flex-wrap: wrap; margin-top: 6px;
+}
+
+/* Canvas: fills available width on mobile, capped on desktop */
+#canvas-wrap { flex-shrink: 0; }
+canvas { border: 4px solid #000000; cursor: pointer; display: block; touch-action: none; }
+
+#panel {
+  width: min(220px, 95vw);
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+/* On narrow screens, panel goes below board and spans full width */
+@media (max-width: 600px) {
+  #layout { flex-direction: column; align-items: center; gap: 10px; }
+  #canvas-wrap { width: 100%; display: flex; justify-content: center; }
+  #panel { width: 100%; max-width: 460px; flex-direction: row; flex-wrap: wrap; gap: 8px; }
+  #score { width: 100%; }
+  #status { flex: 1 1 100%; }
+  #myron-think { flex: 1 1 100%; }
+  #diff-badge { flex: 0 0 auto; }
+  #learn-badge { flex: 1 1 100%; }
+  #loss-badge { flex: 1 1 100%; }
+  #legend { flex: 1 1 auto; }
+  .panel-btn { flex: 1 1 calc(33% - 8px); font-size: 11px; padding: 10px 4px; }
+}
+
+#status {
+  background: #123d1c; border: 1px solid #3a7a4a; padding: 12px;
+  font-size: clamp(12px, 3.2vw, 14px); line-height: 1.7; color: #ffffff; min-height: 70px; font-weight: bold;
+  transition: box-shadow 0.3s ease;
+}
+#status.pulse { box-shadow: 0 0 0 3px #ffe066 inset; }
+#myron-think {
+  font-size: clamp(11px, 2.8vw, 12px); color: #aaddaa; font-style: italic;
+  min-height: 32px; padding: 8px 10px;
+  border: 1px solid #2a6a3a; border-top: none;
+  background: #0e3018; font-weight: bold;
+}
+
+.panel-btn {
+  background: transparent; border: 1px solid #aaddaa; color: #ffffff;
+  padding: 11px; font-size: clamp(11px, 3vw, 13px); letter-spacing: 2px; cursor: pointer;
+  font-family: 'Courier New', monospace; font-weight: bold; transition: all 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.panel-btn:hover, .panel-btn:active { border-color: #ffffff; color: #ffffff; background: rgba(255,255,255,0.15); }
+
+#score {
+  display: flex; justify-content: space-between;
+  font-size: clamp(12px, 3vw, 13px); color: #ccffcc; padding: 4px 2px;
+  border-bottom: 1px solid #3a7a4a; font-weight: bold;
+}
+#score span { color: #ffffff; letter-spacing: 1px; }
+
+#legend { font-size: clamp(11px, 2.8vw, 12px); color: #ffffff; line-height: 1.8; padding: 4px 0; font-weight: bold; }
+#legend span { display: inline-block; width: 10px; height: 10px;
+  border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+
+#diff-badge {
+  font-size: clamp(10px, 2.5vw, 11px); letter-spacing: 2px; color: #aaddaa;
+  border: 1px solid #3a7a4a; padding: 4px 8px; text-align: center;
+}
+#learn-badge {
+  font-size: 10px; letter-spacing: 1px; color: #ffcc66;
+  border: 1px solid #5a4a2a; padding: 4px 8px; text-align: center;
+}
+#loss-badge {
+  font-size: 10px; letter-spacing: 1px; color: #ff9966;
+  border: 1px solid #7a3a2a; padding: 4px 8px; text-align: center;
+}
+</style>
+</head>
+<body>
+
+<div id="turn-banner"></div>
+
+<!-- NEXT-GAME FIRST-PLAYER MODAL -->
+<div id="firstModal" role="dialog" aria-modal="true" aria-labelledby="firstModalTitle" onclick="if(event.target===this)closeFirstModal()">
+  <div class="modal-card">
+    <h2 id="firstModalTitle">NEXT GAME</h2>
+    <p>WHO GOES FIRST?</p>
+    <button class="btn" id="firstP1Btn" onclick="startNextGame('P1')">PLAYER 1</button>
+    <button class="btn" id="firstP2Btn" onclick="startNextGame('P2')">MYRON</button>
+    <button class="btn btn-dim" onclick="closeFirstModal()">CANCEL</button>
+  </div>
+</div>
+
+<!-- PRE-GAME SCREEN -->
+<div id="pregame">
+  <h1>TRAPT</h1>
+  <p class="sub">BOARD STRATEGY GAME</p>
+
+  <button class="btn" onclick="showInstr()">READ RULES</button>
+  <button class="btn" onclick="showMode()">START GAME</button>
+
+  <div id="instructions-panel">
+    <h2>HOW TO PLAY</h2>
+    <p>The object: trap your opponent's knight (L) so it has no legal move on its turn. SUGGESTION: start a game, attempt a move or two, select change mode button to return to HOW TO PLAY, to gain a better understanding.</p><br>
+    <p>The <strong style="color:#ffffff">center square</strong> may never be occupied by either player.</p><br>
+    <p>Each turn consists of two moves:<br>
+    (1) Move your <strong style="color:#ffffff">knight</strong>, then<br>
+    (2) Move any one of your four <strong style="color:#ffffff">pawns</strong>.</p><br>
+    <p>A knight's move is legal when it occupies at least one new square from its current position.
+    It may be slid, rotated, flipped, or placed elsewhere — as long as it occupies at least one new square.</p><br>
+    <p>A knight is identified by its head <strong style="color:#ffffff">"H"</strong> and foot <strong style="color:#ffffff">"F"</strong>.
+    When placing the head, if multiple foot positions are possible, a second selection will be required to place the foot.</p><br>
+    <p>A pawn may move to any vacant square. The UNDO button is to undo the knight move. To undo a highlighted pawn selection, select it again.</p><br>
+    <p>Players alternate until one player cannot move their knight. The player who made the last full move wins.</p><br>
+    <p><strong style="color:#ffffff">Hint:</strong> After moving your knight, move a pawn that is adjacent to it — don't let your own pawns block your future knight moves.</p>
+    <br>
+    <button class="btn btn-dim" onclick="hideInstr()">CLOSE</button>
+  </div>
+
+  <div id="modeDiv">
+    <button class="btn" onclick="setMode('HvH')">HUMAN VS HUMAN</button>
+    <button class="btn" onclick="showDiff()">HUMAN VS MYRON</button>
+  </div>
+
+  <div id="diffDiv">
+    <p>SELECT MYRON'S LEVEL</p>
+    <button class="btn" onclick="setDiff('NOVICE')">NOVICE</button>
+    <button class="btn" onclick="setDiff('VETERAN')">VETERAN</button>
+    <button class="btn" onclick="setDiff('MASTER')">MASTER</button>
+  </div>
+
+  <div id="firstDiv">
+    <p>WHO GOES FIRST?</p>
+    <button class="btn" onclick="startGame('P1')">PLAYER 1</button>
+    <button class="btn" onclick="startGame('P2')">MYRON</button>
+  </div>
+</div>
+
+<!-- GAME SCREEN -->
+<div id="game">
+  <div id="title">TRAPT</div>
+  <div id="layout">
+    <div id="canvas-wrap"><canvas id="board" width="460" height="460"></canvas></div>
+    <div id="panel">
+      <div id="score">
+        <span id="p1score">P1: 0</span>
+        <span id="p2score">MYRON: 0</span>
+      </div>
+      <div id="status">Waiting…</div>
+      <div id="myron-think"></div>
+      <div id="diff-badge">MYRON: —</div>
+      <div id="learn-badge">GAMES LEARNED: 0</div>
+      <div id="loss-badge">AVOIDING 0 LOSING LINES</div>
+      <div id="legend">
+        <div><span style="background:#7B4A2D"></span> Player 1 (dark tan)</div>
+        <div><span style="background:#B8865A"></span> Myron / P2 (tan)</div>
+      </div>
+      <button class="panel-btn" id="undo-btn" onclick="undoSelection()" style="display:none;border-color:#ffcc66;color:#ffcc66;">UNDO</button>
+      <button class="panel-btn" onclick="nextGame()">NEXT GAME</button>
+      <button class="panel-btn" onclick="resetScores()" style="font-size:12px;color:#aaddaa;border-color:#3a7a4a;">RESET SCORES</button>
+      <button class="panel-btn" onclick="resetWeights()" style="font-size:11px;color:#ff9966;border-color:#7a3a2a;">RESET MYRON'S BRAIN</button>
+      <button class="panel-btn" onclick="goHome()" style="font-size:12px;color:#aaddaa;border-color:#3a7a4a;">CHANGE MODE</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   TRAPT — V1.7b "SINGLE ENGINE" LADDER
+   This version removes the idea of four different AIs entirely.
+
+   There is ONE shared brain and ONE search engine:
+     - one learned weight vector W
+     - one loss book
+     - one full-width iterative-deepening search
+     - every level calls the exact same engine
+
+   Difficulty is a monotone handicap on that engine:
+
+     NOVICE       epsilon = 1.00  (always a random legal move)
+     VETERAN      epsilon = 0.40  (40% random, 60% engine's best —
+                                   a blend between the old Experienced
+                                   at 0.60 and Expert at 0.25)
+     MASTER       epsilon = 0.00  (always the engine's best)
+
+   Because every level shares the same policy and the same
+   evaluation, a lower level is literally the upper level with more
+   mistakes. It cannot have a better evaluator, a better loss book,
+   or a deeper search than the level above it. The ladder is monotone
+   by construction, not by hoping several heuristics line up.
+
+   A seeded RNG is exposed for reproducible self-play testing:
+     window.TRAPT.setSeed(12345)
+   ============================================================ */
+
+const canvas   = document.getElementById('board');
+const ctx      = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+const thinkEl  = document.getElementById('myron-think');
+
+const SIZE = 5, CENTER = 12;
+let CELL = 92;
+
+let GAME_MODE   = 'HvM';
+let MYRON_LEVEL = 'VETERAN'; // NOVICE | VETERAN | MASTER
+let gameOver    = false;
+let gameWinner  = null;
+let p1Score     = parseInt(localStorage.getItem('trapt17b_p1') || '0');
+let p2Score     = parseInt(localStorage.getItem('trapt17b_p2') || '0');
+
+let board, p1K, p2K, curPlayer, phase;
+let selPawn = null, pendHead = null, pendFeet = [], pendShapes = [];
+let savedKnight = null; // stores knight cells before knight move committed
+
+/* ---- Learning state ----
+   ONE SHARED BRAIN. Weights W, gamesLearned and lossBook use a single
+   storage slot that every difficulty level reads. Difficulty is a
+   monotone noise parameter on top of this one engine; no level has a
+   different evaluator or a different memory. ---- */
+let gamesLearned = 0;
+let featureLog = [];
+let W = null;
+
+/* ---- Loss-book state: exact positions + moves that led to a loss ---- */
+let moveLog = [];
+let lossBook = null;
+
+const WEIGHT_BAND = 0.35; // learned weights stay within ±35% of defaults
+function defaultWeights() {
+  // These match the original hard-coded heuristic coefficients.
+  return { oppSq: 8, mySq: 5, near0: 18, near1: 6, selfBlock: 12, myCenter: 2, oppCenter: 1 };
+}
+function loadWeightsFor(level) {
+  try {
+    const raw = localStorage.getItem('trapt17b_myron_weights');
+    if (raw) {
+      const D = defaultWeights();
+      const w = Object.assign(defaultWeights(), JSON.parse(raw));
+      for (const k in w) w[k] = Math.max(D[k]*(1-WEIGHT_BAND), Math.min(D[k]*(1+WEIGHT_BAND), w[k]));
+      return w;
+    }
+  } catch (e) { /* ignore corrupt storage */ }
+  return defaultWeights();
+}
+function saveWeightsFor(level) {
+  localStorage.setItem('trapt17b_myron_weights', JSON.stringify(W));
+  localStorage.setItem('trapt17b_games_learned', gamesLearned);
+}
+function loadWeights() { return loadWeightsFor(MYRON_LEVEL); }
+function saveWeights() { saveWeightsFor(MYRON_LEVEL); }
+function loadLearnedCountFor(level) {
+  return parseInt(localStorage.getItem('trapt17b_games_learned') || '0');
+}
+function resetWeights() {
+  W = defaultWeights();
+  gamesLearned = 0;
+  saveWeights();
+  updateLearnBadge();
+  resetLossBook();
+  TT_TABLE.clear(); // cached evaluations were computed under the old weights
+  thinkEl.textContent = "Myron's shared brain has been reset to factory defaults — including every avoided losing line. Every difficulty level uses this same brain.";
+}
+function updateLearnBadge() {
+  const el = document.getElementById('learn-badge');
+  if (el) el.textContent = 'GAMES LEARNED (SHARED): ' + gamesLearned;
+}
+
+/* ---- Loss book: remembers exact (position, move) pairs that led to a
+   loss, so Myron won't blindly repeat the same losing move from the
+   same exact position again. A single shared book is used by every
+   level, so an upper level can never be missing a line the lower
+   level knows about. Only the decisive non-forced move is recorded
+   (see recordLossesFromGame), and the book is capped in size. ---- */
+function loadLossBookFor(level) {
+  try {
+    const raw = localStorage.getItem('trapt17b_loss_book');
+    if (raw) return JSON.parse(raw);
+  } catch (e) { /* ignore corrupt storage */ }
+  return {};
+}
+function saveLossBookFor(level) {
+  localStorage.setItem('trapt17b_loss_book', JSON.stringify(lossBook));
+}
+function loadLossBook() { return loadLossBookFor(MYRON_LEVEL); }
+function saveLossBook() { saveLossBookFor(MYRON_LEVEL); }
+const MAX_LOSS_KEYS = 2000;
+function pruneLossBook() {
+  const keys = Object.keys(lossBook);
+  if (keys.length > MAX_LOSS_KEYS) {
+    const remove = keys.length - MAX_LOSS_KEYS;
+    for (let i = 0; i < remove; i++) delete lossBook[keys[i]];
+  }
+}
+function resetLossBook() {
+  lossBook = {};
+  saveLossBook();
+  updateLossBadge();
+}
+function stateKey(brd, k1, k2) {
+  return brd.join('') + '|' + k1.slice().sort((a,b)=>a-b).join(',') + '|' + k2.slice().sort((a,b)=>a-b).join(',');
+}
+function moveKeyFor(kmCells, pm) {
+  const kk = kmCells.slice().sort((a,b)=>a-b).join(',');
+  const pk = pm ? pm.from + '-' + pm.to : 'none';
+  return kk + '::' + pk;
+}
+function avoidPenalty(sk, mk) {
+  // Flat penalty: duplicate symmetric entries can no longer inflate it.
+  return (lossBook[sk] && lossBook[sk][mk]) ? 100000 : 0;
+}
+function countAvoidedLines() {
+  let n = 0;
+  for (const k in lossBook) n += Object.keys(lossBook[k]).length;
+  return n;
+}
+function updateLossBadge() {
+  const el = document.getElementById('loss-badge');
+  if (el) el.textContent = 'AVOIDING ' + countAvoidedLines() + ' LOSING LINE' + (countAvoidedLines()!==1?'S':'');
+}
+
+/* ---- Board symmetry: the 5x5 grid (with its fixed, always-empty center
+   square) has the full 8-element dihedral symmetry group of a square —
+   4 rotations and 4 reflections. A losing position/move is exactly as
+   losing when the whole board is rotated or mirrored, so every loss is
+   recorded under all 8 equivalent orientations. That means a mistake
+   learned in one corner of the board is also avoided when the same
+   situation recurs (rotated or mirrored) anywhere else on the board,
+   without needing to encounter that exact orientation again. ---- */
+const SYM_TRANSFORMS = [
+  (r,c) => [r,     c    ],  // identity
+  (r,c) => [c,     4-r  ],  // rotate 90
+  (r,c) => [4-r,   4-c  ],  // rotate 180
+  (r,c) => [4-c,   r    ],  // rotate 270
+  (r,c) => [r,     4-c  ],  // flip horizontal (mirror columns)
+  (r,c) => [4-r,   c    ],  // flip vertical (mirror rows)
+  (r,c) => [c,     r    ],  // transpose (flip main diagonal)
+  (r,c) => [4-c,   4-r  ],  // flip anti-diagonal
+];
+function transformIndex(i, t) {
+  const {r,c} = rc(i);
+  const [nr,nc] = SYM_TRANSFORMS[t](r,c);
+  return idx(nr,nc);
+}
+function transformCells(cells, t) {
+  return cells.map(i => transformIndex(i,t));
+}
+function transformBoard(brd, t) {
+  const nb = new Array(25).fill(0);
+  for (let i=0;i<25;i++) nb[transformIndex(i,t)] = brd[i];
+  return nb;
+}
+/* Produces the unique (stateKey, moveKey) pairs for all 8 symmetric
+   orientations of a given pre-move state + chosen knight/pawn move.
+   Deduplicated: a symmetric position must not count the same line
+   multiple times. */
+function allSymmetricKeys(brd, k1, k2, kmCells, pm) {
+  const out = [];
+  const seen = new Set();
+  for (let t=0; t<8; t++) {
+    const tb  = transformBoard(brd, t);
+    const tk1 = transformCells(k1, t);
+    const tk2 = transformCells(k2, t);
+    const tkm = transformCells(kmCells, t);
+    const tpm = pm ? {from: transformIndex(pm.from,t), to: transformIndex(pm.to,t)} : null;
+    const sk = stateKey(tb, tk1, tk2);
+    const mk = moveKeyFor(tkm, tpm);
+    const id = sk + '||' + mk;
+    if (!seen.has(id)) {
+      seen.add(id);
+      out.push({ stateKey: sk, moveKey: mk });
+    }
+  }
+  return out;
+}
+function recordLossesFromGame(winner) {
+  if (GAME_MODE === 'HvM' && winner === 'P1' && moveLog.length > 0) {
+    /* Only the LAST non-forced Myron move is recorded. Recording every
+       move of a lost game poisons the book with good and forced moves,
+       which can make a level play worse the more it "learns". */
+    let decisive = null;
+    for (let i = moveLog.length - 1; i >= 0; i--) {
+      if ((moveLog[i].options || 0) > 1) { decisive = moveLog[i]; break; }
+    }
+    if (decisive) {
+      for (const {stateKey: sk, moveKey: mk} of decisive.keys) {
+        if (!lossBook[sk]) lossBook[sk] = {};
+        lossBook[sk][mk] = 1; // flat count; avoidPenalty is flat too
+      }
+      pruneLossBook();
+      saveLossBook();
+      updateLossBadge();
+    }
+  }
+  moveLog = [];
+}
+
+function setUndoBtn(visible) {
+  document.getElementById('undo-btn').style.display = visible ? '' : 'none';
+}
+
+let bannerTimer = null;
+function showTurnBanner(text, color) {
+  const el = document.getElementById('turn-banner');
+  if (!el) return;
+  el.textContent = text;
+  el.style.borderColor = color;
+  el.classList.add('show');
+  clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => { el.classList.remove('show'); }, 1600);
+}
+function hideTurnBanner() {
+  const el = document.getElementById('turn-banner');
+  if (el) el.classList.remove('show');
+  clearTimeout(bannerTimer);
+}
+function pulseStatus() {
+  statusEl.classList.add('pulse');
+  setTimeout(() => statusEl.classList.remove('pulse'), 900);
+}
+
+function undoSelection() {
+  if (gameOver) return;
+  if (phase === 'PAWN_TO') {
+    selPawn = null;
+    phase = 'PAWN_FROM';
+    setUndoBtn(false);
+    drawAll(); updateStatus();
+  } else if (phase === 'PAWN_FROM') {
+    if (savedKnight) {
+      setK(curPlayer, savedKnight);
+      savedKnight = null;
+    }
+    phase = 'KNIGHT_HEAD';
+    selPawn = null;
+    setUndoBtn(false);
+    drawAll(); updateStatus();
+  } else if (phase === 'KNIGHT_FOOT') {
+    pendHead = null; pendFeet = []; pendShapes = [];
+    phase = 'KNIGHT_HEAD';
+    setUndoBtn(false);
+    drawAll(); updateStatus();
+  }
+}
+
+function resizeCanvas() {
+  const maxW = Math.min(460, window.innerWidth - 28);
+  CELL = Math.floor(maxW / SIZE);
+  const sz = CELL * SIZE;
+  canvas.width  = sz;
+  canvas.height = sz;
+  if (board) drawAll();
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+const PATTERNS = [
+  [{r:0,c:0},{r:1,c:0},{r:2,c:0},{r:2,c:1}],
+  [{r:0,c:0},{r:1,c:0},{r:2,c:0},{r:2,c:-1}],
+  [{r:0,c:0},{r:-1,c:0},{r:-2,c:0},{r:-2,c:1}],
+  [{r:0,c:0},{r:-1,c:0},{r:-2,c:0},{r:-2,c:-1}],
+  [{r:0,c:0},{r:0,c:1},{r:0,c:2},{r:1,c:2}],
+  [{r:0,c:0},{r:0,c:1},{r:0,c:2},{r:-1,c:2}],
+  [{r:0,c:0},{r:0,c:-1},{r:0,c:-2},{r:1,c:-2}],
+  [{r:0,c:0},{r:0,c:-1},{r:0,c:-2},{r:-1,c:-2}]
+];
+
+function rc(i)    { return {r: Math.floor(i/SIZE), c: i%SIZE}; }
+function idx(r,c) { return r*SIZE+c; }
+
+function initBoard() {
+  board = new Array(25).fill(0);
+  board[CENTER] = 3;
+  board[20]=1; board[21]=1; board[23]=1; board[24]=1;
+  board[0]=2;  board[1]=2;  board[3]=2;  board[4]=2;
+  p1K = [8,13,18,17];
+  p2K = [16,6,11,7];
+}
+
+function setK(p, c) { if(p==='P1') p1K=c.slice(); else p2K=c.slice(); }
+
+/* Every geometrically valid knight placement on this board (inside the grid,
+   avoiding the center) never changes, so it is built ONCE here, in the same
+   order the old per-call scan produced them (head square, then pattern).
+   allShapes() then only has to filter that fixed list by occupancy using
+   bitmasks — identical results, same order, far faster. */
+const STATIC_SHAPES = (function() {
+  const out = [];
+  for (let h = 0; h < 25; h++) {
+    const {r, c: cv} = rc(h);
+    for (const pat of PATTERNS) {
+      const cells = [];
+      let ok = true;
+      for (const o of pat) {
+        const rr = r+o.r, cc = cv+o.c;
+        if (rr<0||rr>=SIZE||cc<0||cc>=SIZE) { ok=false; break; }
+        const id = idx(rr,cc);
+        if (id===CENTER) { ok=false; break; }
+        cells.push(id);
+      }
+      if (!ok) continue;
+      let mask = 0;
+      for (const id of cells) mask |= (1 << id);
+      out.push({cells, mask});
+    }
+  }
+  return out;
+})();
+
+function allShapes(player, brd, k1, k2) {
+  const cur   = player==='P1' ? k1 : k2;
+  const other = player==='P1' ? k2 : k1;
+  let curMask = 0, othMask = 0, pawnMask = 0;
+  for (let i = 0; i < 4; i++) { curMask |= (1 << cur[i]); othMask |= (1 << other[i]); }
+  for (let i = 0; i < 25; i++) { const v = brd[i]; if (v === 1 || v === 2) pawnMask |= (1 << i); }
+  const blocked = othMask | (pawnMask & ~curMask);
+  const shapes = [];
+  for (let s = 0; s < STATIC_SHAPES.length; s++) {
+    const m = STATIC_SHAPES[s].mask;
+    if (m === curMask) continue;   // must occupy at least one new square
+    if (m & blocked) continue;
+    shapes.push(STATIC_SHAPES[s].cells.slice());
+  }
+  return shapes;
+}
+
+function isOcc(i, brd, k1, k2) {
+  if (i===CENTER) return true;
+  if (brd[i]!==0) return true;
+  if (k1.includes(i)||k2.includes(i)) return true;
+  return false;
+}
+
+function legalPawns(player, brd, k1, k2) {
+  const mv=[], val=player==='P1'?1:2;
+  for (let i=0;i<25;i++) {
+    if (brd[i]===val) {
+      for (let j=0;j<25;j++) {
+        if (!isOcc(j,brd,k1,k2)) mv.push({from:i,to:j});
+      }
+    }
+  }
+  return mv;
+}
+
+function hasMove(player, brd, k1, k2) {
+  return allShapes(player,brd,k1,k2).length > 0;
+}
+
+function knightCenter(cells) {
+  let sr=0, sc=0;
+  for (const i of cells) { const {r,c}=rc(i); sr+=r; sc+=c; }
+  return {r:sr/4, c:sc/4};
+}
+function dist(a,b) { return Math.abs(a.r-b.r)+Math.abs(a.c-b.c); }
+
+function reachableHeads(player, brd, k1, k2) {
+  const shapes = allShapes(player,brd,k1,k2);
+  const heads = new Set();
+  for (const s of shapes) { if(s&&s.length>0) heads.add(s[0]); }
+  return heads;
+}
+
+function computeFeatures(brd, myK, oppK) {
+  const myMoves  = allShapes('P1', brd, myK,  oppK).length;
+  const oppMoves = allShapes('P1', brd, oppK, myK ).length;
+  const f = { myMoves, oppMoves, oppSq:0, mySq:0, near0:0, near1:0, selfBlock:0, myCenter:0, oppCenter:0 };
+  if (oppMoves===0 || myMoves===0) return f;
+
+  f.oppSq = Math.pow(20 - oppMoves, 2);
+  f.mySq  = Math.pow(20 - myMoves,  2);
+
+  const oppHeads = reachableHeads('P1', brd, oppK, myK);
+  for (let i=0;i<25;i++) {
+    if (brd[i]===2) {
+      const {r:pr,c:pc}=rc(i);
+      for (const h of oppHeads) {
+        const {r:hr,c:hc}=rc(h);
+        const d=Math.abs(pr-hr)+Math.abs(pc-hc);
+        if (d===0) f.near0++;
+        else if (d===1) f.near1++;
+      }
+    }
+  }
+  const myHeads = reachableHeads('P1', brd, myK, oppK);
+  for (let i=0;i<25;i++) { if (brd[i]===2 && myHeads.has(i)) f.selfBlock++; }
+
+  const mc=knightCenter(myK), oc=knightCenter(oppK);
+  f.myCenter  = (4-dist(mc,{r:2,c:2}));
+  f.oppCenter = (4-dist(oc,{r:2,c:2}));
+  return f;
+}
+
+function scoreFromFeatures(f) {
+  if (f.oppMoves === 0) return  50000;
+  if (f.myMoves  === 0) return -50000;
+  let score = 0;
+  score += f.oppSq * W.oppSq;
+  score -= f.mySq  * W.mySq;
+  score += f.near0 * W.near0;
+  score += f.near1 * W.near1;
+  score -= f.selfBlock * W.selfBlock;
+  score += f.myCenter  * W.myCenter;
+  score -= f.oppCenter * W.oppCenter;
+  return score;
+}
+
+function scoreState(brd, myK, oppK) {
+  return scoreFromFeatures(computeFeatures(brd, myK, oppK));
+}
+
+/* ============================================================
+   TRANSPOSITION TABLE
+   Many different move orders (especially pawn shuffles) lead to the
+   exact same resulting position, so without caching, minimax was
+   redoing the same expensive subtree evaluation over and over. This
+   table stores, for every (position + whose turn + search settings)
+   seen so far, the best score found and to what depth it was searched,
+   plus whether that score was exact or just a bound (from alpha-beta
+   cutoff). A cached result is only reused when it was computed to at
+   least as much depth as currently required — this is what lets both
+   plain re-searches AND iterative deepening reuse work from prior
+   calls instead of starting from scratch every time.
+
+   IMPORTANT: EXPERT and MASTER search the exact same
+   positions but with different branch-limiting (opts.knightBranch /
+   opts.pawnBranch) — EXPERT explores every candidate move, MASTER
+   caps it to 6. A value computed under a narrower
+   branch limit is a DIFFERENT, more approximate answer than one
+   computed exhaustively, even for the identical board position — so
+   the cache key includes a signature of those branch limits. Without
+   this, a MASTER game played earlier in the session could leave
+   cached values behind that EXPERT would then reuse as if
+   they were its own — quietly blurring the difficulty levels together
+   and making a level's strength depend on play order rather than its
+   own fixed settings. Keying on the opts signature keeps every level
+   searching (and caching) in its own lane, so the stairstep of
+   difficulty stays fixed and reproducible no matter what was played
+   before it.
+   ============================================================ */
+let TT_TABLE = new Map();
+const TT_MAX_ENTRIES = 150000; // memory safety valve for a browser tab
+function optsSignature(opts) {
+  opts = opts || {};
+  const kb = (typeof opts.knightBranch === 'number') ? opts.knightBranch : 'inf';
+  const pb = (typeof opts.pawnBranch === 'number') ? opts.pawnBranch : 'full';
+  return kb + ':' + pb;
+}
+function ttKey(brd, k1, k2, isMyronTurn, opts) {
+  return stateKey(brd, k1, k2) + '|' + (isMyronTurn?1:0) + '|' + optsSignature(opts);
+}
+function ttStore(key, value, depth, flag) {
+  if (TT_TABLE.size >= TT_MAX_ENTRIES) TT_TABLE.clear();
+  TT_TABLE.set(key, {value, depth, flag});
+}
+
+function minimax(brd, k1, k2, depth, alpha, beta, isMyronTurn, opts) {
+  if (++nodeCount > nodeLimit) throw BUDGET_EXCEEDED;
+  opts = opts || {};
+  const knightBranch = opts.knightBranch || Infinity;
+  const pawnBranch    = (typeof opts.pawnBranch === 'number') ? opts.pawnBranch : null;
+
+  const alphaOrig = alpha, betaOrig = beta;
+  const ttk = ttKey(brd, k1, k2, isMyronTurn, opts);
+  const cached = TT_TABLE.get(ttk);
+  if (cached && cached.depth >= depth) {
+    if (cached.flag === 'exact') return cached.value;
+    if (cached.flag === 'lower') { if (cached.value > alpha) alpha = cached.value; }
+    else if (cached.flag === 'upper') { if (cached.value < beta) beta = cached.value; }
+    if (alpha >= beta) return cached.value;
+  }
+
+  const pVal = isMyronTurn?2:1;
+  const pStr = isMyronTurn?'P2':'P1';
+  let kMoves = allShapes(pStr,brd,k1,k2);
+  if (kMoves.length===0) {
+    const term = isMyronTurn?-50000:50000;
+    ttStore(ttk, term, depth, 'exact');
+    return term;
+  }
+  if (depth===0) {
+    const val = scoreState(brd,k2,k1);
+    ttStore(ttk, val, depth, 'exact');
+    return val;
+  }
+
+  if (kMoves.length > knightBranch) {
+    const oppCenter = knightCenter(isMyronTurn?k1:k2);
+    kMoves = kMoves.slice().sort((a,b)=>dist(knightCenter(a),oppCenter)-dist(knightCenter(b),oppCenter));
+    kMoves = kMoves.slice(0, knightBranch);
+  }
+
+  let best = isMyronTurn?-Infinity:Infinity;
+  let anyEval = false;
+
+  for (const km of kMoves) {
+    const nk1 = isMyronTurn?k1:km;
+    const nk2 = isMyronTurn?km:k2;
+    const pMoves = legalPawns(pStr,brd,nk1,nk2);
+    if (pMoves.length===0) continue;
+    const oppC = knightCenter(isMyronTurn?nk1:nk2);
+    pMoves.sort((a,b)=>dist(rc(a.to),oppC)-dist(rc(b.to),oppC));
+    const maxPawns = pawnBranch !== null ? pawnBranch : pMoves.length;
+    const pSample = pMoves.slice(0,maxPawns);
+    for (const pm of pSample) {
+      const b2=brd.slice(); b2[pm.to]=pVal; b2[pm.from]=0;
+      const val=minimax(b2,nk1,nk2,depth-1,alpha,beta,!isMyronTurn,opts);
+      anyEval=true;
+      if (isMyronTurn) { if(val>best)best=val; if(val>alpha)alpha=val; }
+      else             { if(val<best)best=val; if(val<beta)beta=val;   }
+      if (beta<=alpha) break;
+    }
+    if (beta<=alpha) break;
+  }
+  if (!anyEval) {
+    const val = scoreState(brd,k2,k1);
+    ttStore(ttk, val, depth, 'exact');
+    return val;
+  }
+
+  let flag = 'exact';
+  if (best <= alphaOrig) flag = 'upper';
+  else if (best >= betaOrig) flag = 'lower';
+  ttStore(ttk, best, depth, flag);
+
+  return best;
+}
+
+/* ============================================================
+   ONE SHARED ENGINE + MONOTONE NOISE
+   Every level calls chooseLevelMove(). The only difference between
+   levels is epsilon: the probability of ignoring the engine and
+   playing a uniformly random legal move. Epsilon is non-increasing
+   as difficulty rises, so the ladder is a strict handicap ladder on
+   a single policy.
+   ============================================================ */
+const LEVELS = {
+  NOVICE:  { epsilon: 1.00, label: 'NOVICE' },
+  VETERAN: { epsilon: 0.40, label: 'VETERAN' },
+  MASTER:  { epsilon: 0.00, label: 'MASTER' }
+};
+
+/* One engine configuration, shared by all levels. Full width: no root
+   caps and no branch beams. Depth 2 is the same search the old EXPERT
+   used, but now every level uses it (or a noisy version of it). */
+const ENGINE_CFG = { depth: 2, nodes: 300000, opts: undefined };
+
+/* Seeded RNG for reproducible self-play tests (mulberry32). The UI
+   never calls setSeed, so normal play stays random. */
+let rngState = (Date.now() ^ 0x9e3779b9) >>> 0;
+function rng() {
+  rngState = (rngState + 0x6D2B79F5) | 0;
+  let t = rngState;
+  t = Math.imul(t ^ t >>> 15, 1 | t);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+  return ((t ^ t >>> 14) >>> 0) / 4294967296;
+}
+function setSeed(s) { rngState = ((s >>> 0) ^ 0x9e3779b9) >>> 0; }
+
+function chooseRandomMove(kMoves) {
+  const bestK = kMoves[Math.floor(rng()*kMoves.length)];
+  const pMoves = legalPawns('P2', board, p1K, bestK);
+  const bestP = pMoves.length ? pMoves[Math.floor(rng()*pMoves.length)] : null;
+  return { bestK, bestP };
+}
+
+function chooseLevelMove(kMoves, sk) {
+  const cfg = LEVELS[MYRON_LEVEL] || LEVELS.VETERAN;
+  if (cfg.epsilon >= 1 || rng() < cfg.epsilon) {
+    return chooseRandomMove(kMoves);
+  }
+  return iterativeDeepeningMove(kMoves, sk, ENGINE_CFG.depth, ENGINE_CFG.nodes,
+                                Infinity, Infinity, ENGINE_CFG.opts, []);
+}
+
+function aiTurn() {
+  if (gameOver || curPlayer!=='P2') return;
+
+  const kMoves = allShapes('P2', board, p1K, p2K);
+  if (kMoves.length===0) { endGame('P1'); drawAll(); return; }
+
+  thinkEl.textContent = 'Myron is thinking…';
+
+  const sk = stateKey(board, p1K, p2K);
+  const { bestK, bestP } = chooseLevelMove(kMoves, sk);
+  moveLog.push({keys: allSymmetricKeys(board, p1K, p2K, bestK, bestP), options: kMoves.length});
+  runMyronMove(bestK, bestP, FLAVORS[MYRON_LEVEL] || FLAVORS.VETERAN);
+}
+
+const FLAVORS = {
+  NOVICE: {
+    midText: 'Myron is moving a pawn…',
+    final: (n) => `Myron played randomly. (${n} opponent escape${n!==1?'s':''} left)`
+  },
+  VETERAN: {
+    midText: 'Myron is weighing its options…',
+    final: (n) => n<=1 ? `Myron closes in… (${n} escape${n!==1?'s':''} left)`
+                : n<=4 ? `Myron is tightening the trap… (${n} escapes left)`
+                : `Myron plays it solid. (${n} opponent escapes remaining)`
+  },
+  MASTER: {
+    midText: 'Myron is calculating several moves ahead…',
+    final: (n) => n<=1 ? `Myron closes the trap… (${n} escape${n!==1?'s':''} left)`
+                : n<=4 ? `Myron sees it coming… (${n} escapes left)`
+                : `Myron played. (${n} opponent escapes remaining)`
+  }
+};
+
+function runMyronMove(bestK, bestP, flavor) {
+  setTimeout(() => {
+    thinkEl.textContent = 'Myron is moving its knight…';
+    const oldK = p2K.slice();
+    animateKnightMove(oldK, bestK, 750, () => {
+      setK('P2', bestK);
+      drawAll();
+      thinkEl.textContent = flavor.midText;
+      setTimeout(() => {
+        if (bestP) {
+          animatePawnMove(bestP.from, bestP.to, 2, 650, () => {
+            board[bestP.to] = 2; board[bestP.from] = 0;
+            finishMyronMove(flavor);
+          });
+        } else {
+          finishMyronMove(flavor);
+        }
+      }, 550);
+    });
+  }, 500);
+}
+
+function finishMyronMove(flavor) {
+  featureLog.push(computeFeatures(board, p2K, p1K));
+  const oppMoves = allShapes('P1', board, p1K, p2K).length;
+  thinkEl.textContent = flavor.final(oppMoves);
+
+  curPlayer='P1'; phase='KNIGHT_HEAD';
+  drawAll();
+  if (!hasMove('P1',board,p1K,p2K)) { endGame('P2'); drawAll(); return; }
+  updateStatus();
+  showTurnBanner('YOUR TURN', '#7B4A2D');
+  pulseStatus();
+}
+
+/* ============================================================
+   ITERATIVE DEEPENING (node-budgeted, completed iterations only)
+   Searches depth 1, 2, 3 … up to maxDepth. Two rules keep it fair:
+     1. The limit is a NODE BUDGET, not milliseconds, so a slow phone
+        searches exactly as deeply as a fast desktop — a level's
+        strength no longer depends on the device.
+     2. An iteration that runs out of budget part-way is THROWN AWAY and
+        the last fully completed depth is used. (Previously a partial
+        deeper pass could overwrite a complete shallower one, making a
+        level randomly weaker.) Depth 1 uses no minimax, so it can never
+        be cut off and there is always a complete result to fall back on.
+   `extraCands` are optional extra root candidates (kept for future use).
+   ============================================================ */
+let nodeCount = 0, nodeLimit = Infinity;
+const BUDGET_EXCEEDED = { budget: true };
+/* Lightweight instrumentation (per search depth-cap): how many searches ran,
+   how many iterations were cut off by the node budget, and the largest
+   iteration seen. Inspect in the console with:  console.table(searchStats) */
+const searchStats = {};
+function statFor(maxDepth) { return searchStats[maxDepth] || (searchStats[maxDepth] = {searches:0, iterations:0, cutOff:0, maxNodes:0}); }
+
+function sameCells(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  const as = a.slice().sort((x,y)=>x-y), bs = b.slice().sort((x,y)=>x-y);
+  return as.every((v,i)=>v===bs[i]);
+}
+function sameMove(a, b) {
+  if (!a || !b) return false;
+  if (!sameCells(a.bestK, b.bestK)) return false;
+  const ap = a.bestP, bp = b.bestP;
+  if (!ap || !bp) return !ap && !bp;
+  return ap.from === bp.from && ap.to === bp.to;
+}
+
+function iterativeDeepeningMove(kMoves, sk, maxDepth, nodeBudget, rootKnightLimit, rootPawnLimit, searchOpts, extraCands) {
+  const oppCenter = knightCenter(p1K);
+  let bestK = null, bestP = null, bestScore = -Infinity;
+  let completedDepth = 0;
+  let preferredK = null; // best knight move from the previous (shallower) iteration
+  extraCands = (extraCands || []).filter(c => c && c.bestK);
+  const st = statFor(maxDepth);
+  st.searches++;
+
+  for (let depth = 1; depth <= maxDepth; depth++) {
+    let orderedK = kMoves.slice().sort((a,b) => {
+      const aFirst = preferredK && sameCells(a, preferredK) ? -1 : 0;
+      const bFirst = preferredK && sameCells(b, preferredK) ? -1 : 0;
+      if (aFirst !== bFirst) return aFirst - bFirst;
+      return dist(knightCenter(a),oppCenter)-dist(knightCenter(b),oppCenter);
+    });
+    if (rootKnightLimit && orderedK.length > rootKnightLimit) orderedK = orderedK.slice(0, rootKnightLimit);
+
+    // Build this iteration's root candidate list: own candidates + the weaker level's picks.
+    const cands = [];
+    for (const km of orderedK) {
+      const pMoves = legalPawns('P2', board, p1K, km);
+      if (pMoves.length===0) continue;
+      pMoves.sort((a,b)=>dist(rc(a.to),oppCenter)-dist(rc(b.to),oppCenter));
+      const pSample = rootPawnLimit ? pMoves.slice(0, rootPawnLimit) : pMoves;
+      for (const pm of pSample) cands.push({ bestK: km, bestP: pm });
+    }
+    for (const ex of extraCands) {
+      if (!cands.some(c => sameMove(c, ex))) cands.push({ bestK: ex.bestK, bestP: ex.bestP });
+    }
+
+    nodeCount = 0;
+    nodeLimit = (depth === 1) ? Infinity : nodeBudget; // depth 1 does no minimax; never cut off
+    let iterScore = -Infinity, iterK = null, iterP = null;
+    let completed = true;
+
+    try {
+      for (const cand of cands) {
+        const km = cand.bestK, pm = cand.bestP;
+        const b2=board.slice();
+        if (pm) { b2[pm.to]=2; b2[pm.from]=0; }
+        if (!hasMove('P1',b2,p1K,km)) { iterScore=50000; iterK=km; iterP=pm; break; }
+        let score = depth===1 ? scoreState(b2,km,p1K)
+                              : minimax(b2,p1K,km,depth-1,-Infinity,Infinity,false,searchOpts);
+        score -= avoidPenalty(sk, moveKeyFor(km, pm));
+        if (score > iterScore) { iterScore=score; iterK=km; iterP=pm; }
+      }
+    } catch (e) {
+      if (e !== BUDGET_EXCEEDED) throw e;
+      completed = false;
+    }
+    nodeLimit = Infinity;
+    st.iterations++;
+    if (nodeCount > st.maxNodes) st.maxNodes = nodeCount;
+    if (!completed) st.cutOff++;
+
+    if (!completed) break;            // discard the partial iteration; keep last complete depth
+    if (iterK) {
+      bestK = iterK; bestP = iterP; bestScore = iterScore;
+      completedDepth = depth;
+      preferredK = iterK;
+    }
+    if (bestScore >= 50000) break;    // forced win found — no need to search deeper
+  }
+
+  if (!bestK) bestK = kMoves[0];
+  if (!bestP) {
+    const pf = legalPawns('P2', board, p1K, bestK);
+    if (pf.length) bestP = pf[0];
+  }
+  return { bestK, bestP, score: bestScore, completedDepth };
+}
+
+/* Debug/test handle: lets you run the same engine from the console and
+   seed the RNG for reproducible ladder tests. */
+window.TRAPT = {
+  setSeed,
+  levels: LEVELS,
+  engineConfig: ENGINE_CFG,
+  chooseLevelMove,
+  chooseRandomMove,
+  searchStats
+};
+
+function learnFromGame(winner) {
+  if (GAME_MODE !== 'HvM' || featureLog.length === 0) { featureLog = []; return; }
+
+  const outcome = (winner === 'P2') ? 1 : -1;
+  const lr = 0.01;
+  const lrSq = 0.00002;
+
+  for (const f of featureLog) {
+    if (f.oppMoves === 0 || f.myMoves === 0) continue;
+    // Gradient of scoreFromFeatures() w.r.t. each weight. The three
+    // negative-coefficient terms must move in the opposite direction.
+    W.oppSq     += lrSq * outcome * f.oppSq;
+    W.mySq      -= lrSq * outcome * f.mySq;
+    W.near0     += lr   * outcome * f.near0;
+    W.near1     += lr   * outcome * f.near1;
+    W.selfBlock -= lr   * outcome * f.selfBlock;
+    W.myCenter  += lr   * outcome * f.myCenter;
+    W.oppCenter -= lr   * outcome * f.oppCenter;
+  }
+
+  /* BOUNDED LEARNING: each weight may drift only within a band around
+     its factory default (WEIGHT_BAND = ±35%). Every level shares this
+     one brain, so learning can fine-tune judgment but can never make
+     the ladder non-monotone: epsilon (the random-move rate) still
+     decides who is stronger. */
+  const D = defaultWeights();
+  for (const k in W) {
+    W[k] = Math.max(D[k] * (1 - WEIGHT_BAND), Math.min(D[k] * (1 + WEIGHT_BAND), W[k]));
+  }
+
+  gamesLearned++;
+  saveWeights();
+  updateLearnBadge();
+  TT_TABLE.clear(); // W just changed, so every cached evaluation is now stale
+  featureLog = [];
+}
+
+function shadeColor(hex, amt) {
+  let r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  r=Math.max(0,Math.min(255,r+amt));
+  g=Math.max(0,Math.min(255,g+amt));
+  b=Math.max(0,Math.min(255,b+amt));
+  return '#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
+}
+
+function draw3DTile(x, y, w, h, topColor, bevel) {
+  const grd = ctx.createLinearGradient(x, y, x+w, y+h);
+  grd.addColorStop(0, shadeColor(topColor, 28));
+  grd.addColorStop(1, shadeColor(topColor, -28));
+  ctx.fillStyle = grd;
+  ctx.fillRect(x, y, w, h);
+
+  const rightGrd = ctx.createLinearGradient(x+w, y, x+w+bevel, y);
+  rightGrd.addColorStop(0, shadeColor(topColor, -60));
+  rightGrd.addColorStop(1, shadeColor(topColor, -80));
+  ctx.fillStyle = rightGrd;
+  ctx.beginPath();
+  ctx.moveTo(x+w,   y);
+  ctx.lineTo(x+w+bevel, y+bevel);
+  ctx.lineTo(x+w+bevel, y+h+bevel);
+  ctx.lineTo(x+w,   y+h);
+  ctx.closePath(); ctx.fill();
+
+  const botGrd = ctx.createLinearGradient(x, y+h, x, y+h+bevel);
+  botGrd.addColorStop(0, shadeColor(topColor, -50));
+  botGrd.addColorStop(1, shadeColor(topColor, -70));
+  ctx.fillStyle = botGrd;
+  ctx.beginPath();
+  ctx.moveTo(x,       y+h);
+  ctx.lineTo(x+bevel, y+h+bevel);
+  ctx.lineTo(x+w+bevel, y+h+bevel);
+  ctx.lineTo(x+w,     y+h);
+  ctx.closePath(); ctx.fill();
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(x+1, y+h-1); ctx.lineTo(x+1, y+1); ctx.lineTo(x+w-1, y+1); ctx.stroke();
+}
+
+function draw3DPawn(cx, cy, radius, color, isSelected) {
+  const depth = Math.round(radius * 0.5);
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0)';
+  ctx.beginPath();
+  ctx.ellipse(cx+4, cy+depth+5, radius*0.88, radius*0.28, 0, 0, Math.PI*2);
+  const shGrd = ctx.createRadialGradient(cx+4, cy+depth+5, 0, cx+4, cy+depth+5, radius*0.88);
+  shGrd.addColorStop(0, 'rgba(0,0,0,0.5)');
+  shGrd.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = shGrd; ctx.fill();
+  ctx.restore();
+
+  const sideGrd = ctx.createLinearGradient(cx-radius, cy, cx+radius, cy+depth);
+  sideGrd.addColorStop(0, shadeColor(color, -80));
+  sideGrd.addColorStop(1, shadeColor(color, -100));
+  ctx.beginPath(); ctx.arc(cx, cy+depth, radius, 0, Math.PI*2);
+  ctx.fillStyle = sideGrd; ctx.fill();
+
+  const discGrd = ctx.createRadialGradient(cx - radius*0.3, cy - radius*0.3, radius*0.05, cx, cy, radius);
+  discGrd.addColorStop(0, shadeColor(color, 80));
+  discGrd.addColorStop(0.45, color);
+  discGrd.addColorStop(1, shadeColor(color, -55));
+  ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI*2);
+  ctx.fillStyle = discGrd; ctx.fill();
+
+  const glintGrd = ctx.createRadialGradient(
+    cx - radius*0.32, cy - radius*0.32, 0,
+    cx - radius*0.32, cy - radius*0.32, radius*0.30);
+  glintGrd.addColorStop(0, 'rgba(255,255,255,0.95)');
+  glintGrd.addColorStop(0.5, 'rgba(255,255,255,0.55)');
+  glintGrd.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.beginPath(); ctx.ellipse(cx - radius*0.32, cy - radius*0.32, radius*0.28, radius*0.16, -0.6, 0, Math.PI*2);
+  ctx.fillStyle = glintGrd; ctx.fill();
+
+  ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI*2);
+  ctx.strokeStyle = shadeColor(color, -90); ctx.lineWidth = 2; ctx.stroke();
+
+  if (isSelected) {
+    ctx.beginPath(); ctx.arc(cx, cy, radius*1.35, 0, Math.PI*2);
+    ctx.strokeStyle='#ffe066'; ctx.lineWidth=3.5; ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, radius*1.35, 0, Math.PI*2);
+    ctx.strokeStyle='rgba(255,255,255,0.5)'; ctx.lineWidth=1; ctx.stroke();
+  }
+}
+
+function knightOutlinePath(cells) {
+  const edgeMap = new Map();
+  for (const i of cells) {
+    const {r, c:cv} = rc(i);
+    const x = cv*CELL, y = r*CELL;
+    const edges = [
+      [x, y, x+CELL, y],
+      [x+CELL, y, x+CELL, y+CELL],
+      [x, y+CELL, x+CELL, y+CELL],
+      [x, y, x, y+CELL]
+    ];
+    for (const [ax,ay,bx,by] of edges) {
+      const key = ax<bx||(ax===bx&&ay<by) ? `${ax},${ay},${bx},${by}` : `${bx},${by},${ax},${ay}`;
+      edgeMap.set(key, (edgeMap.get(key)||0)+1);
+    }
+  }
+  const boundary = [];
+  for (const [key, cnt] of edgeMap) {
+    if (cnt===1) {
+      const [ax,ay,bx,by] = key.split(',').map(Number);
+      boundary.push([ax,ay,bx,by]);
+    }
+  }
+  if (boundary.length===0) return [];
+  const adjMap = new Map();
+  for (const [ax,ay,bx,by] of boundary) {
+    const a=`${ax},${ay}`, b=`${bx},${by}`;
+    if (!adjMap.has(a)) adjMap.set(a,[]);
+    if (!adjMap.has(b)) adjMap.set(b,[]);
+    adjMap.get(a).push({pt:[bx,by],key:b});
+    adjMap.get(b).push({pt:[ax,ay],key:a});
+  }
+  const first = boundary[0];
+  const polygon = [[first[0],first[1]]];
+  let prevKey = `${first[0]},${first[1]}`;
+  let curKey  = `${first[2]},${first[3]}`;
+  for (let i=0;i<boundary.length-1;i++) {
+    const [cx2,cy2] = curKey.split(',').map(Number);
+    polygon.push([cx2,cy2]);
+    const neighbors = adjMap.get(curKey) || [];
+    const next = neighbors.find(n=>n.key!==prevKey);
+    if (!next) break;
+    prevKey = curKey;
+    curKey  = next.key;
+  }
+  return polygon;
+}
+
+function drawKnightPath(ctx, poly) {
+  ctx.moveTo(poly[0][0], poly[0][1]);
+  for (let i=1;i<poly.length;i++) ctx.lineTo(poly[i][0], poly[i][1]);
+  ctx.closePath();
+}
+
+function drawKnight(cells, fill, stroke, textColor) {
+  const poly = knightOutlinePath(cells);
+  if (poly.length < 3) return;
+
+  const xs = poly.map(p=>p[0]), ys = poly.map(p=>p[1]);
+  const minX=Math.min(...xs), maxX=Math.max(...xs);
+  const minY=Math.min(...ys), maxY=Math.max(...ys);
+
+  const depth = Math.round(CELL * 0.07);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(minX - 2, minY - 2, (maxX - minX) + depth + 8, (maxY - minY) + depth + 8);
+  ctx.clip();
+
+  ctx.beginPath(); drawKnightPath(ctx, poly.map(([px,py])=>[px+depth+2, py+depth+2]));
+  const shGrd = ctx.createLinearGradient(minX, minY, maxX+depth+2, maxY+depth+2);
+  shGrd.addColorStop(0, 'rgba(0,0,0,0.40)');
+  shGrd.addColorStop(1, 'rgba(0,0,0,0.10)');
+  ctx.fillStyle = shGrd; ctx.fill();
+  ctx.restore();
+
+  const n = poly.length;
+  for (let i=0;i<n;i++) {
+    const [ax,ay] = poly[i];
+    const [bx,by] = poly[(i+1)%n];
+    const ex=bx-ax, ey=by-ay;
+    const nx2=ey, ny2=-ex;
+    if (nx2+ny2 >= 0) {
+      const dot = (nx2+ny2) / Math.sqrt(nx2*nx2+ny2*ny2);
+      const darkness = Math.round(dot * 55);
+      ctx.beginPath();
+      ctx.moveTo(ax,ay); ctx.lineTo(bx,by);
+      ctx.lineTo(bx+depth,by+depth); ctx.lineTo(ax+depth,ay+depth);
+      ctx.closePath();
+      const faceGrd = ctx.createLinearGradient(ax, ay, ax+depth, ay+depth);
+      faceGrd.addColorStop(0, shadeColor(fill, -45 - darkness));
+      faceGrd.addColorStop(1, shadeColor(fill, -65 - darkness));
+      ctx.fillStyle = faceGrd; ctx.fill();
+    }
+  }
+
+  ctx.beginPath(); drawKnightPath(ctx, poly);
+  const topGrd = ctx.createRadialGradient(
+    minX + (maxX-minX)*0.35, minY + (maxY-minY)*0.25, CELL*0.1,
+    minX + (maxX-minX)*0.5,  minY + (maxY-minY)*0.5,  (maxX-minX)*0.85);
+  topGrd.addColorStop(0,    shadeColor(fill, 75));
+  topGrd.addColorStop(0.35, shadeColor(fill, 30));
+  topGrd.addColorStop(0.7,  fill);
+  topGrd.addColorStop(1,    shadeColor(fill, -50));
+  ctx.fillStyle = topGrd; ctx.fill();
+
+  ctx.beginPath(); drawKnightPath(ctx, poly);
+  ctx.save(); ctx.clip();
+  const sheenGrd = ctx.createLinearGradient(minX, minY, minX+(maxX-minX)*0.6, minY+(maxY-minY)*0.5);
+  sheenGrd.addColorStop(0,   'rgba(255,255,255,0.30)');
+  sheenGrd.addColorStop(0.4, 'rgba(255,255,255,0.08)');
+  sheenGrd.addColorStop(1,   'rgba(255,255,255,0)');
+  ctx.fillStyle = sheenGrd; ctx.fillRect(minX, minY, maxX-minX, maxY-minY);
+  ctx.restore();
+
+  ctx.beginPath(); drawKnightPath(ctx, poly);
+  ctx.strokeStyle = stroke; ctx.lineWidth = 2.5; ctx.stroke();
+
+  const fsize = Math.round(CELL*0.40);
+  ctx.font = `bold ${fsize}px 'Courier New'`;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  const {r:hr,c:hc}=rc(cells[0]);
+  const {r:fr,c:fc}=rc(cells[3]);
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillText('H', hc*CELL+CELL/2+2, hr*CELL+CELL/2+2);
+  ctx.fillText('F', fc*CELL+CELL/2+2, fr*CELL+CELL/2+2);
+  ctx.fillStyle = textColor;
+  ctx.fillText('H', hc*CELL+CELL/2, hr*CELL+CELL/2);
+  ctx.fillText('F', fc*CELL+CELL/2, fr*CELL+CELL/2);
+}
+
+/* Big translucent result banner painted straight onto the board. */
+function drawWinOverlay() {
+  if (!gameOver || !gameWinner) return;
+  let text;
+  if (GAME_MODE === 'HvM') text = (gameWinner === 'P2') ? 'MYRON WINS' : 'YOU WIN';
+  else                     text = pName(gameWinner).toUpperCase() + ' WINS';
+
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  let size = Math.round(canvas.height * 0.22);
+  const maxW = canvas.width * 0.9;
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `900 ${size}px 'Courier New', monospace`;
+  const w = ctx.measureText(text).width;
+  if (w > maxW) {
+    size = Math.max(10, Math.floor(size * maxW / w));
+    ctx.font = `900 ${size}px 'Courier New', monospace`;
+  }
+  // soft dark backing so the see-through fill stays readable on every tile
+  ctx.globalAlpha = 0.35;
+  ctx.lineWidth = Math.max(3, size * 0.06);
+  ctx.strokeStyle = '#000000';
+  ctx.strokeText(text, cx, cy);
+  // large, transparent fill
+  ctx.globalAlpha = 0.50;
+  ctx.fillStyle = (gameWinner === 'P2') ? '#e8b47a' : '#f2e6c8';
+  ctx.fillText(text, cx, cy);
+  ctx.restore();
+}
+
+function drawAll(opts) {
+  opts = opts || {};
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const bevel = Math.round(CELL * 0.09);
+  for (let r=0;r<SIZE;r++) {
+    for (let c=0;c<SIZE;c++) {
+      const isLight = (r+c)%2===0;
+      const baseColor = isLight ? '#d0d0d0' : '#707070';
+      draw3DTile(c*CELL, r*CELL, CELL, CELL, baseColor, bevel);
+      if (idx(r,c)===CENTER) {
+        draw3DTile(c*CELL, r*CELL, CELL, CELL, '#2e2e44', bevel);
+        ctx.strokeStyle='rgba(255,255,255,0.4)'; ctx.lineWidth=1.2;
+        ctx.strokeRect(c*CELL+3,r*CELL+3,CELL-6,CELL-6);
+        ctx.fillStyle='#ffffff';
+        ctx.font=`bold ${Math.round(CELL*0.28)}px 'Courier New'`;
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText('TRAPT',c*CELL+CELL/2,r*CELL+CELL/2);
+      }
+    }
+  }
+  for (let i=0;i<25;i++) {
+    if ((board[i]===1||board[i]===2) && i!==opts.skipPawnAt) {
+      const {r,c:cv}=rc(i);
+      const cx=cv*CELL+CELL/2, cy=r*CELL+CELL/2;
+      draw3DPawn(cx, cy, CELL*0.23, board[i]===1?'#8B2500':'#D4691E', i===selPawn);
+    }
+  }
+  if (!opts.skipP1) drawKnight(p1K,'#8B2500','#1a0000','#ffffff');
+  if (!opts.skipP2) drawKnight(p2K,'#D4691E','#3a1800','#000000');
+  ctx.strokeStyle='rgba(0,0,0,0.7)'; ctx.lineWidth=1.5;
+  for (let i=0;i<=SIZE;i++) {
+    ctx.beginPath(); ctx.moveTo(i*CELL,0); ctx.lineTo(i*CELL,SIZE*CELL); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,i*CELL); ctx.lineTo(SIZE*CELL,i*CELL); ctx.stroke();
+  }
+  drawWinOverlay();
+}
+
+function pixelCentroid(cells) {
+  let sx=0, sy=0;
+  for (const i of cells) { const {r,c} = rc(i); sx += c*CELL+CELL/2; sy += r*CELL+CELL/2; }
+  return {x: sx/cells.length, y: sy/cells.length};
+}
+function easeInOutQuad(t) { return t<0.5 ? 2*t*t : -1+(4-2*t)*t; }
+
+function animateKnightMove(oldCells, newCells, duration, callback) {
+  const oldC = pixelCentroid(oldCells);
+  const newC = pixelCentroid(newCells);
+  const dx = newC.x - oldC.x, dy = newC.y - oldC.y;
+  const start = performance.now();
+  function frame(now) {
+    const t = Math.min(1, (now-start)/duration);
+    const te = easeInOutQuad(t);
+    drawAll({skipP2:true});
+    ctx.save();
+    ctx.globalAlpha = 1 - te;
+    ctx.translate(dx*te, dy*te);
+    drawKnight(oldCells, '#D4691E', '#3a1800', '#000000');
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = te;
+    ctx.translate(-dx*(1-te), -dy*(1-te));
+    drawKnight(newCells, '#D4691E', '#3a1800', '#000000');
+    ctx.restore();
+    if (t < 1) requestAnimationFrame(frame);
+    else callback();
+  }
+  requestAnimationFrame(frame);
+}
+
+function animatePawnMove(fromCell, toCell, pawnVal, duration, callback) {
+  const {r:fr,c:fc} = rc(fromCell); const fx=fc*CELL+CELL/2, fy=fr*CELL+CELL/2;
+  const {r:tr,c:tc} = rc(toCell);   const tx=tc*CELL+CELL/2, ty=tr*CELL+CELL/2;
+  const start = performance.now();
+  function frame(now) {
+    const t = Math.min(1, (now-start)/duration);
+    const te = easeInOutQuad(t);
+    const cx = fx + (tx-fx)*te;
+    const cy = fy + (ty-fy)*te;
+    drawAll({skipPawnAt: fromCell});
+    draw3DPawn(cx, cy, CELL*0.23, pawnVal===1?'#8B2500':'#D4691E', false);
+    if (t < 1) requestAnimationFrame(frame);
+    else callback();
+  }
+  requestAnimationFrame(frame);
+}
+
+function pName(p) { return p==='P1'?'Player 1':(GAME_MODE==='HvM'?'Myron':'Player 2'); }
+
+function updateStatus() {
+  if (gameOver) return;
+  const col=curPlayer==='P1'?'#7B4A2D':'#B8865A';
+  const who=pName(curPlayer);
+  let msg='';
+  if      (phase==='KNIGHT_HEAD') msg=`select your knight's new <strong>HEAD</strong> square`;
+  else if (phase==='KNIGHT_FOOT') msg=`select the <strong>FOOT</strong> square`;
+  else if (phase==='PAWN_FROM')   msg=`select a <strong>pawn</strong> to move`;
+  else                            msg=`select a <strong>destination</strong> for that pawn`;
+  statusEl.innerHTML=`<span style="color:${col}">${who}</span>: ${msg}`;
+}
+
+function updateScoreDisplay() {
+  document.getElementById('p1score').textContent='P1: '+p1Score;
+  document.getElementById('p2score').textContent=(GAME_MODE==='HvM'?'MYRON':'P2')+': '+p2Score;
+}
+
+function endGame(winner) {
+  gameOver=true;
+  gameWinner=winner;
+  hideTurnBanner();
+  const col=winner==='P1'?'#7B4A2D':'#B8865A';
+  if (winner==='P1') { p1Score++; localStorage.setItem('trapt17b_p1',p1Score); }
+  else               { p2Score++; localStorage.setItem('trapt17b_p2',p2Score); }
+  updateScoreDisplay();
+  learnFromGame(winner);
+  recordLossesFromGame(winner);
+  statusEl.innerHTML=
+    `<span style="color:${col}">${pName(winner)} wins!</span><br>`+
+    `<small style="color:#aaddaa">Opponent had no legal knight move.</small><br>`+
+    `<small style="color:#ccffcc">Select NEXT GAME or RESET SCORES below.</small>`;
+  thinkEl.textContent=winner==='P2'?'Myron is satisfied.':'Myron takes notes for next time…';
+}
+
+function handleCanvasInput(clientX, clientY) {
+  if (gameOver) return;
+  if (GAME_MODE==='HvM' && curPlayer==='P2') return;
+  const rect=canvas.getBoundingClientRect();
+  const scaleX=canvas.width/rect.width, scaleY=canvas.height/rect.height;
+  const x=(clientX-rect.left)*scaleX, y=(clientY-rect.top)*scaleY;
+  const c=Math.floor(x/CELL), r=Math.floor(y/CELL);
+  if (r<0||r>=SIZE||c<0||c>=SIZE) return;
+  const i=idx(r,c);
+  if      (phase==='KNIGHT_HEAD') handleHead(i);
+  else if (phase==='KNIGHT_FOOT') handleFoot(i);
+  else if (phase==='PAWN_FROM')   handlePawnFrom(i);
+  else                            handlePawnTo(i);
+}
+canvas.addEventListener('click', e => handleCanvasInput(e.clientX, e.clientY));
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  handleCanvasInput(t.clientX, t.clientY);
+}, { passive: false });
+
+function handleHead(i) {
+  const shapes=allShapes(curPlayer,board,p1K,p2K);
+  if (shapes.length===0) { endGame(curPlayer==='P1'?'P2':'P1'); drawAll(); return; }
+  const matching=shapes.filter(s=>s[0]===i);
+  if (matching.length===0) { statusEl.textContent='Select a valid HEAD square.'; return; }
+  const feetSet=new Set(matching.map(s=>s[3]));
+  const feet=[...feetSet];
+  if (feet.length===1) {
+    savedKnight = (curPlayer==='P1' ? p1K : p2K).slice();
+    setK(curPlayer,matching[0]);
+    phase='PAWN_FROM'; selPawn=null;
+    pendHead=null; pendFeet=[]; pendShapes=[];
+    setUndoBtn(true);
+    drawAll(); updateStatus();
+  } else {
+    pendHead=i; pendFeet=feet; pendShapes=matching;
+    phase='KNIGHT_FOOT';
+    setUndoBtn(true);
+    drawAll(); updateStatus();
+  }
+}
+
+function handleFoot(i) {
+  if (i===pendHead) {
+    phase='KNIGHT_HEAD'; pendHead=null; pendFeet=[]; pendShapes=[];
+    setUndoBtn(false);
+    drawAll(); updateStatus(); return;
+  }
+  if (!pendFeet.includes(i)) { statusEl.textContent='Select a foot square, or re-select the head to cancel.'; return; }
+  const chosen=pendShapes.find(s=>s[3]===i);
+  savedKnight = (curPlayer==='P1' ? p1K : p2K).slice();
+  setK(curPlayer,chosen);
+  pendHead=null; pendFeet=[]; pendShapes=[];
+  phase='PAWN_FROM'; selPawn=null;
+  setUndoBtn(true);
+  drawAll(); updateStatus();
+}
+
+function handlePawnFrom(i) {
+  const val=curPlayer==='P1'?1:2;
+  if (board[i]!==val) { statusEl.textContent='Select one of your pawns.'; return; }
+  selPawn=i; phase='PAWN_TO';
+  setUndoBtn(true);
+  drawAll(); updateStatus();
+}
+
+function handlePawnTo(i) {
+  if (i===selPawn) {
+    selPawn=null; phase='PAWN_FROM';
+    setUndoBtn(true);
+    drawAll(); updateStatus(); return;
+  }
+  if (isOcc(i,board,p1K,p2K)) { statusEl.textContent='That square is occupied — choose an empty square.'; return; }
+  const val=curPlayer==='P1'?1:2;
+  board[i]=val; board[selPawn]=0; selPawn=null;
+  savedKnight=null;
+  const prev=curPlayer;
+  curPlayer=curPlayer==='P1'?'P2':'P1';
+  phase='KNIGHT_HEAD';
+  setUndoBtn(false);
+  drawAll();
+  if (!hasMove(curPlayer,board,p1K,p2K)) { endGame(prev); drawAll(); return; }
+
+  if (GAME_MODE==='HvM') {
+    if (curPlayer==='P2') showTurnBanner("MYRON'S TURN", '#B8865A');
+  } else {
+    showTurnBanner(pName(curPlayer).toUpperCase()+"'S TURN", curPlayer==='P1'?'#7B4A2D':'#B8865A');
+  }
+
+  updateStatus();
+  if (GAME_MODE==='HvM' && curPlayer==='P2' && !gameOver) setTimeout(aiTurn,700);
+}
+
+function showInstr() {
+  const el=document.getElementById('instructions-panel');
+  el.style.display=el.style.display==='block'?'none':'block';
+}
+function hideInstr() { document.getElementById('instructions-panel').style.display='none'; }
+function showMode()  { document.getElementById('modeDiv').style.display='flex'; }
+
+function showDiff() {
+  GAME_MODE='HvM';
+  document.getElementById('diffDiv').style.display='flex';
+}
+
+function setDiff(level) {
+  MYRON_LEVEL=level;
+  document.getElementById('firstDiv').style.display='flex';
+}
+
+function setMode(m) {
+  GAME_MODE=m;
+  if (m==='HvH') {
+    document.getElementById('p2score').textContent='P2: 0';
+    startGame('P1');
+  }
+}
+
+function startGame(first) {
+  document.getElementById('pregame').style.display='none';
+  document.getElementById('game').style.display='block';
+  hideTurnBanner();
+
+  const badge=document.getElementById('diff-badge');
+  const learnBadge=document.getElementById('learn-badge');
+  const lossBadge=document.getElementById('loss-badge');
+  if (GAME_MODE==='HvM') {
+    badge.textContent='MYRON: '+MYRON_LEVEL;
+    badge.style.display='block';
+    learnBadge.style.display='block';
+    lossBadge.style.display='block';
+    // Load the single shared brain — every level uses it.
+    W = loadWeights();
+    lossBook = loadLossBook();
+    gamesLearned = loadLearnedCountFor(MYRON_LEVEL);
+    TT_TABLE.clear(); // safety: start each game with a clean cache
+  } else {
+    badge.style.display='none';
+    learnBadge.style.display='none';
+    lossBadge.style.display='none';
+  }
+
+  initBoard();
+  gameOver=false; gameWinner=null; selPawn=null; pendHead=null; pendFeet=[]; pendShapes=[]; savedKnight=null;
+  featureLog=[]; moveLog=[];
+  setUndoBtn(false);
+  curPlayer=first; phase='KNIGHT_HEAD';
+  updateScoreDisplay();
+  updateLearnBadge();
+  drawAll(); updateStatus(); thinkEl.textContent='';
+  if (GAME_MODE==='HvM' && curPlayer==='P2') {
+    showTurnBanner("MYRON'S TURN", '#B8865A');
+    setTimeout(aiTurn,800);
+  }
+}
+
+function nextGame() {
+  // After a finished game, ask who should move first in the next one.
+  if (gameOver) { openFirstModal(); return; }
+  // Mid-game restart keeps the original behaviour.
+  resetForNextGame('P1');
+}
+
+function openFirstModal() {
+  document.getElementById('firstP1Btn').textContent = pName('P1').toUpperCase();
+  document.getElementById('firstP2Btn').textContent = pName('P2').toUpperCase();
+  document.getElementById('firstModal').classList.add('show');
+  hideTurnBanner();
+}
+
+function closeFirstModal() {
+  document.getElementById('firstModal').classList.remove('show');
+}
+
+function startNextGame(first) {
+  closeFirstModal();
+  resetForNextGame(first);
+}
+
+function resetForNextGame(first) {
+  hideTurnBanner();
+  if (GAME_MODE==='HvM') {
+    // Guarantee the learned brain is loaded before Myron can be asked to move.
+    if (!W) W = loadWeights();
+    if (!lossBook) lossBook = loadLossBook();
+    gamesLearned = loadLearnedCountFor(MYRON_LEVEL);
+  }
+  initBoard();
+  gameOver=false; gameWinner=null; selPawn=null; pendHead=null; pendFeet=[]; pendShapes=[]; savedKnight=null;
+  featureLog=[]; moveLog=[];
+  setUndoBtn(false);
+  curPlayer=first; phase='KNIGHT_HEAD';
+  updateScoreDisplay();
+  updateLearnBadge();
+  drawAll(); updateStatus(); thinkEl.textContent='';
+  if (GAME_MODE==='HvM' && curPlayer==='P2') {
+    showTurnBanner("MYRON'S TURN", '#B8865A');
+    setTimeout(aiTurn,800);
+  }
+}
+
+function resetScores() {
+  p1Score=0; p2Score=0;
+  localStorage.setItem('trapt17b_p1',0);
+  localStorage.setItem('trapt17b_p2',0);
+  updateScoreDisplay();
+}
+
+function goHome() {
+  document.getElementById('game').style.display='none';
+  document.getElementById('pregame').style.display='flex';
+  document.getElementById('modeDiv').style.display='none';
+  document.getElementById('diffDiv').style.display='none';
+  document.getElementById('firstDiv').style.display='none';
+  document.getElementById('instructions-panel').style.display='none';
+  hideTurnBanner();
+  thinkEl.textContent=''; statusEl.textContent='Waiting…';
+}
+
+updateScoreDisplay();
+updateLearnBadge();
+updateLossBadge();
+</script>
+</body>
+</html>
