@@ -78,6 +78,30 @@ body { background: #1a5c2a; color: #ffffff; font-family: 'Courier New', monospac
 #firstModal p { font-size: clamp(11px, 3vw, 14px); letter-spacing: 2px; color: #ccffcc; font-weight: bold; }
 #firstModal .btn { width: 100%; }
 
+/* EXPORT / IMPORT BRAIN MODAL */
+#brainModal {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.68);
+  display: none; align-items: center; justify-content: center;
+  z-index: 310; padding: 16px;
+}
+#brainModal.show { display: flex; }
+#brainModal .modal-card {
+  background: #123d1c; border: 3px solid #ffffff;
+  padding: 20px 18px; display: flex; flex-direction: column;
+  align-items: stretch; gap: 10px; width: min(460px, 94vw);
+  box-shadow: 0 0 40px rgba(0,0,0,0.75); text-align: center;
+}
+#brainModal h2 { font-size: clamp(18px, 5vw, 22px); letter-spacing: 4px; }
+#brainModal p { font-size: clamp(11px, 3vw, 13px); letter-spacing: 1px; color: #ccffcc; font-weight: bold; line-height: 1.5; }
+#brainText {
+  width: 100%; height: 130px; resize: vertical; background: #0e3018; color: #ffffff;
+  border: 1px solid #4a9a5a; padding: 8px; font-family: 'Courier New', monospace;
+  font-size: 12px; word-break: break-all;
+}
+#brainPreview { color: #ffcc66; min-height: 18px; }
+#brainModal .btn { width: 100%; padding: 12px 10px; }
+#brainModal .btn[disabled] { opacity: 0.4; cursor: default; }
+
 #game { display: none; min-height: 100vh; padding: 10px; }
 #title { text-align: center; font-size: clamp(16px, 5vw, 22px); letter-spacing: 6px; color: #ffffff; padding: 8px 0; font-weight: bold; }
 
@@ -171,6 +195,20 @@ canvas { border: 4px solid #000000; cursor: pointer; display: block; touch-actio
   </div>
 </div>
 
+<!-- EXPORT / IMPORT BRAIN MODAL -->
+<div id="brainModal" role="dialog" aria-modal="true" aria-labelledby="brainTitle" onclick="if(event.target===this)closeBrainModal()">
+  <div class="modal-card">
+    <h2 id="brainTitle">EXPORT BRAIN</h2>
+    <p id="brainMsg"></p>
+    <textarea id="brainText" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off"></textarea>
+    <p id="brainPreview"></p>
+    <button class="btn" id="brainCopyBtn" onclick="copyBrainText()">COPY TO CLIPBOARD</button>
+    <button class="btn" id="brainMergeBtn" onclick="doBrainImport('merge')">MERGE WITH THIS DEVICE</button>
+    <button class="btn" id="brainReplaceBtn" onclick="doBrainImport('replace')">REPLACE THIS DEVICE'S BRAIN</button>
+    <button class="btn btn-dim" onclick="closeBrainModal()">CLOSE</button>
+  </div>
+</div>
+
 <!-- PRE-GAME SCREEN -->
 <div id="pregame">
   <h1>TRAPT</h1>
@@ -237,6 +275,8 @@ canvas { border: 4px solid #000000; cursor: pointer; display: block; touch-actio
       <button class="panel-btn" id="undo-btn" onclick="undoSelection()" style="display:none;border-color:#ffcc66;color:#ffcc66;">UNDO</button>
       <button class="panel-btn" onclick="nextGame()">NEXT GAME</button>
       <button class="panel-btn" onclick="resetScores()" style="font-size:12px;color:#aaddaa;border-color:#3a7a4a;">RESET SCORES</button>
+      <button class="panel-btn" onclick="openBrainExport()" style="font-size:12px;color:#aaddaa;border-color:#3a7a4a;">EXPORT BRAIN</button>
+      <button class="panel-btn" onclick="openBrainImport()" style="font-size:12px;color:#aaddaa;border-color:#3a7a4a;">IMPORT BRAIN</button>
       <button class="panel-btn" onclick="resetWeights()" style="font-size:11px;color:#ff9966;border-color:#7a3a2a;">RESET MYRON'S BRAIN</button>
       <button class="panel-btn" onclick="goHome()" style="font-size:12px;color:#aaddaa;border-color:#3a7a4a;">CHANGE MODE</button>
     </div>
@@ -256,7 +296,9 @@ canvas { border: 4px solid #000000; cursor: pointer; display: block; touch-actio
 
    Difficulty is a monotone handicap on that engine:
 
-     NOVICE       epsilon = 1.00  (always a random legal move)
+     NOVICE       epsilon = 0.85  (85% random; the other 15% it plays
+                                   one of the engine's top 5 moves,
+                                   chosen at random)
      VETERAN      epsilon = 0.40  (40% random, 60% engine's best —
                                    a blend between the old Experienced
                                    at 0.60 and Expert at 0.25)
@@ -813,7 +855,7 @@ function minimax(brd, k1, k2, depth, alpha, beta, isMyronTurn, opts) {
    a single policy.
    ============================================================ */
 const LEVELS = {
-  NOVICE:  { epsilon: 1.00, label: 'NOVICE' },
+  NOVICE:  { epsilon: 0.85, topN: 5, label: 'NOVICE' },
   VETERAN: { epsilon: 0.40, label: 'VETERAN' },
   MASTER:  { epsilon: 0.00, label: 'MASTER' }
 };
@@ -842,10 +884,40 @@ function chooseRandomMove(kMoves) {
   return { bestK, bestP };
 }
 
+/* Rank every candidate (knight + pawn) move with the engine's own
+   evaluation, then pick one of the best N at random. Used by Novice for
+   the turns when it does not play a purely random move. */
+function chooseTopNMove(kMoves, sk, N) {
+  const cands = [];
+  for (const km of kMoves) {
+    const pMoves = legalPawns('P2', board, p1K, km);
+    if (pMoves.length === 0) continue;
+    for (const pm of pMoves) {
+      const b2 = board.slice(); b2[pm.to] = 2; b2[pm.from] = 0;
+      let sc;
+      if (!hasMove('P1', b2, p1K, km)) sc = 50000;
+      else {
+        nodeCount = 0; nodeLimit = Infinity;
+        sc = minimax(b2, p1K, km, Math.max(0, ENGINE_CFG.depth - 1), -Infinity, Infinity, false, ENGINE_CFG.opts);
+      }
+      sc -= avoidPenalty(sk, moveKeyFor(km, pm));
+      cands.push({ bestK: km, bestP: pm, score: sc });
+    }
+  }
+  if (cands.length === 0) return chooseRandomMove(kMoves);
+  cands.sort((a, b) => b.score - a.score);
+  const top = cands.slice(0, N);
+  const pick = top[Math.floor(rng() * top.length)];
+  return { bestK: pick.bestK, bestP: pick.bestP };
+}
+
 function chooseLevelMove(kMoves, sk) {
   const cfg = LEVELS[MYRON_LEVEL] || LEVELS.VETERAN;
   if (cfg.epsilon >= 1 || rng() < cfg.epsilon) {
     return chooseRandomMove(kMoves);
+  }
+  if (cfg.topN) {
+    return chooseTopNMove(kMoves, sk, cfg.topN);
   }
   return iterativeDeepeningMove(kMoves, sk, ENGINE_CFG.depth, ENGINE_CFG.nodes,
                                 Infinity, Infinity, ENGINE_CFG.opts, []);
@@ -868,7 +940,7 @@ function aiTurn() {
 const FLAVORS = {
   NOVICE: {
     midText: 'Myron is moving a pawn…',
-    final: (n) => `Myron played randomly. (${n} opponent escape${n!==1?'s':''} left)`
+    final: (n) => `Myron played. (${n} opponent escape${n!==1?'s':''} left)`
   },
   VETERAN: {
     midText: 'Myron is weighing its options…',
@@ -1034,6 +1106,7 @@ window.TRAPT = {
   engineConfig: ENGINE_CFG,
   chooseLevelMove,
   chooseRandomMove,
+  chooseTopNMove,
   searchStats
 };
 
@@ -1610,6 +1683,182 @@ function nextGame() {
   if (gameOver) { openFirstModal(); return; }
   // Mid-game restart keeps the original behaviour.
   resetForNextGame('P1');
+}
+
+/* ============================================================
+   EXPORT / IMPORT BRAIN
+   Myron's brain (weights, games-learned count and loss book) lives in
+   this browser only. EXPORT turns it into a block of text you can keep
+   or send to yourself; IMPORT loads such a block on another device,
+   either MERGING it with what is already here or REPLACING it.
+   Imported data is validated and clamped, so a bad paste can never
+   break the game or push the weights outside their allowed band.
+   ============================================================ */
+const BRAIN_FORMAT = 'TRAPT-BRAIN';
+const BRAIN_PREFIX = 'TRAPT1:';   // gzip + base64 payload
+let brainMode = null;             // 'export' | 'import'
+
+function ensureBrain() {
+  if (!W) W = loadWeights();
+  if (!lossBook) lossBook = loadLossBook();
+  gamesLearned = loadLearnedCountFor(MYRON_LEVEL);
+}
+
+async function gzipToBase64(str) {
+  const stream = new Blob([str]).stream().pipeThrough(new CompressionStream('gzip'));
+  const buf = new Uint8Array(await new Response(stream).arrayBuffer());
+  let bin = ''; for (let i = 0; i < buf.length; i += 8192) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 8192));
+  return btoa(bin);
+}
+async function base64ToGunzip(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return await new Response(stream).text();
+}
+
+async function buildBrainText() {
+  ensureBrain();
+  const json = JSON.stringify({ format: BRAIN_FORMAT, version: 1, weights: W, gamesLearned: gamesLearned, lossBook: lossBook });
+  if (typeof CompressionStream === 'function' && typeof Blob === 'function') {
+    try { return BRAIN_PREFIX + await gzipToBase64(json); } catch (e) { /* fall back to plain JSON */ }
+  }
+  return json;
+}
+
+const SK_RE = /^[0-3]{25}\|[0-9,]*\|[0-9,]*$/;
+const MK_RE = /^[0-9,]+::(none|[0-9]+-[0-9]+)$/;
+async function parseBrainText(raw) {
+  let text = String(raw || '').trim().replace(/\s+/g, ' ');
+  if (!text) throw new Error('Nothing was pasted.');
+  if (text.startsWith(BRAIN_PREFIX)) {
+    if (typeof DecompressionStream !== 'function') throw new Error('This browser cannot read compressed brains.');
+    try { text = await base64ToGunzip(text.slice(BRAIN_PREFIX.length).replace(/\s/g, '')); }
+    catch (e) { throw new Error('That text is damaged or incomplete.'); }
+  }
+  let obj;
+  try { obj = JSON.parse(text); } catch (e) { throw new Error('That is not a TRAPT brain.'); }
+  if (!obj || obj.format !== BRAIN_FORMAT || typeof obj.weights !== 'object' || typeof obj.lossBook !== 'object')
+    throw new Error('That is not a TRAPT brain.');
+  const D = defaultWeights(), w = {};
+  for (const k in D) {
+    const v = Number(obj.weights[k]);
+    w[k] = Number.isFinite(v) ? Math.max(D[k]*(1-WEIGHT_BAND), Math.min(D[k]*(1+WEIGHT_BAND), v)) : D[k];
+  }
+  let g = Math.floor(Number(obj.gamesLearned));
+  if (!Number.isFinite(g) || g < 0) g = 0;
+  if (g > 10000000) g = 10000000;
+  const lb = {};
+  for (const sk of Object.keys(obj.lossBook)) {
+    if (!SK_RE.test(sk) || !obj.lossBook[sk] || typeof obj.lossBook[sk] !== 'object') continue;
+    for (const mk of Object.keys(obj.lossBook[sk])) {
+      if (!MK_RE.test(mk)) continue;
+      if (!lb[sk]) lb[sk] = {};
+      lb[sk][mk] = 1;
+    }
+  }
+  return { weights: w, gamesLearned: g, lossBook: lb };
+}
+function countLines(book) { let n = 0; for (const k in book) n += Object.keys(book[k]).length; return n; }
+
+function showBrainModal(mode) {
+  brainMode = mode;
+  const exp = mode === 'export';
+  document.getElementById('brainTitle').textContent = exp ? 'EXPORT BRAIN' : 'IMPORT BRAIN';
+  document.getElementById('brainCopyBtn').style.display = exp ? '' : 'none';
+  document.getElementById('brainMergeBtn').style.display = exp ? 'none' : '';
+  document.getElementById('brainReplaceBtn').style.display = exp ? 'none' : '';
+  document.getElementById('brainMergeBtn').disabled = true;
+  document.getElementById('brainReplaceBtn').disabled = true;
+  document.getElementById('brainText').readOnly = exp;
+  document.getElementById('brainPreview').textContent = '';
+  document.getElementById('brainModal').classList.add('show');
+}
+function closeBrainModal() { document.getElementById('brainModal').classList.remove('show'); brainMode = null; }
+
+async function openBrainExport() {
+  showBrainModal('export');
+  ensureBrain();
+  const ta = document.getElementById('brainText');
+  document.getElementById('brainMsg').textContent = 'Copy this text and keep it safe (email it to yourself, or save it in a note). On another device, choose IMPORT BRAIN and paste it in.';
+  ta.value = 'Preparing…';
+  ta.value = await buildBrainText();
+  document.getElementById('brainPreview').textContent = gamesLearned + ' games learned, ' + countLines(lossBook) + ' losing lines.';
+  ta.focus(); ta.select();
+}
+
+function copyBrainText() {
+  const ta = document.getElementById('brainText'), pv = document.getElementById('brainPreview');
+  ta.focus(); ta.select();
+  const fallback = () => { try { document.execCommand('copy'); pv.textContent = 'Copied.'; } catch (e) { pv.textContent = 'Select the text above and copy it manually.'; } };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(ta.value).then(() => { pv.textContent = 'Copied.'; }, fallback);
+  } else fallback();
+}
+
+function openBrainImport() {
+  showBrainModal('import');
+  ensureBrain();
+  document.getElementById('brainMsg').textContent = 'Paste a brain exported from another device, then choose MERGE (keep both) or REPLACE (use the pasted brain only).';
+  const ta = document.getElementById('brainText');
+  ta.value = '';
+  ta.oninput = previewBrainImport;
+  ta.focus();
+}
+
+let brainParsed = null, brainPreviewSeq = 0;
+async function previewBrainImport() {
+  const seq = ++brainPreviewSeq;
+  const pv = document.getElementById('brainPreview');
+  const mb = document.getElementById('brainMergeBtn'), rb = document.getElementById('brainReplaceBtn');
+  brainParsed = null; mb.disabled = true; rb.disabled = true;
+  const raw = document.getElementById('brainText').value;
+  if (!raw.trim()) { pv.textContent = ''; return; }
+  try {
+    const parsed = await parseBrainText(raw);
+    if (seq !== brainPreviewSeq) return;
+    brainParsed = parsed;
+    pv.textContent = 'Found: ' + parsed.gamesLearned + ' games, ' + countLines(parsed.lossBook) + ' losing lines.  This device: ' + gamesLearned + ' games, ' + countLines(lossBook) + ' lines.';
+    mb.disabled = false; rb.disabled = false;
+  } catch (e) {
+    if (seq !== brainPreviewSeq) return;
+    pv.textContent = e.message;
+  }
+}
+
+function doBrainImport(mode) {
+  if (!brainParsed) return;
+  ensureBrain();
+  const inc = brainParsed, D = defaultWeights();
+  if (mode === 'replace') {
+    W = Object.assign({}, inc.weights);
+    gamesLearned = inc.gamesLearned;
+    lossBook = JSON.parse(JSON.stringify(inc.lossBook));
+  } else {
+    const a = gamesLearned, b = inc.gamesLearned, tot = a + b;
+    const nw = {};
+    for (const k in D) {
+      const mine = Number(W[k]), theirs = inc.weights[k];
+      nw[k] = tot > 0 ? (mine * a + theirs * b) / tot : (mine + theirs) / 2;
+      nw[k] = Math.max(D[k]*(1-WEIGHT_BAND), Math.min(D[k]*(1+WEIGHT_BAND), nw[k]));
+    }
+    W = nw;
+    gamesLearned = Math.min(10000000, tot);
+    for (const sk in inc.lossBook) {
+      if (!lossBook[sk]) lossBook[sk] = {};
+      for (const mk in inc.lossBook[sk]) lossBook[sk][mk] = 1;
+    }
+  }
+  pruneLossBook();
+  saveWeights(); saveLossBook();
+  updateLearnBadge(); updateLossBadge();
+  TT_TABLE.clear();
+  brainParsed = null;
+  document.getElementById('brainMergeBtn').disabled = true;
+  document.getElementById('brainReplaceBtn').disabled = true;
+  document.getElementById('brainPreview').textContent = (mode === 'replace' ? 'Replaced. ' : 'Merged. ') +
+    'Myron now has ' + gamesLearned + ' games learned and ' + countLines(lossBook) + ' losing lines.';
 }
 
 function openFirstModal() {

@@ -15,7 +15,7 @@ Works on phones and computers. No install, no account.
 
 | Level | How he plays |
 |---|---|
-| **Novice** | Always plays a random legal move. |
+| **Novice** | Plays a random legal move 85% of the time, and otherwise one of its top 5 moves. |
 | **Veteran** | Looks 2 moves ahead, but plays a random move 40% of the time. |
 | **Master** | Looks 2 moves ahead and always plays his best move. |
 
@@ -23,7 +23,7 @@ Works on phones and computers. No install, no account.
 
 Myron learns from games you play against him.
 
-Everything is saved in **your browser only**. Nothing is sent anywhere, so each device and browser has its own Myron. Clearing your browser's site data resets him. **RESET MYRON'S BRAIN** also clears it.
+Everything is saved in **your browser only**. To move Myron's brain to another device, use **EXPORT BRAIN** on the first device and **IMPORT BRAIN** on the second. Nothing is sent anywhere, so each device and browser has its own Myron. Clearing your browser's site data resets him. **RESET MYRON'S BRAIN** also clears it.
 
 ## Credits
 
