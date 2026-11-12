@@ -78,27 +78,6 @@ body { background: #1a5c2a; color: #ffffff; font-family: 'Courier New', monospac
 #firstModal p { font-size: clamp(11px, 3vw, 14px); letter-spacing: 2px; color: #ccffcc; font-weight: bold; }
 #firstModal .btn { width: 100%; }
 
-/* HIDDEN INFO WINDOW (tap the start-screen title 5 times) */
-#infoModal {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.68);
-  display: none; align-items: center; justify-content: center;
-  z-index: 320; padding: 16px;
-}
-#infoModal.show { display: flex; }
-#infoModal .modal-card {
-  background: #123d1c; border: 3px solid #ffffff;
-  padding: 20px 18px; display: flex; flex-direction: column;
-  align-items: stretch; gap: 10px; width: min(480px, 94vw); max-height: 90vh;
-  box-shadow: 0 0 40px rgba(0,0,0,0.75);
-}
-#infoModal h2 { font-size: clamp(18px, 5vw, 22px); letter-spacing: 4px; text-align: center; }
-#infoBody {
-  background: #0e3018; border: 1px solid #4a9a5a; padding: 10px; overflow-y: auto;
-  font-size: 12px; line-height: 1.6; color: #ccffcc; white-space: pre-wrap; word-break: break-word;
-  text-align: left; max-height: 55vh;
-}
-#infoModal .btn { width: 100%; padding: 12px 10px; }
-
 /* EXPORT / IMPORT BRAIN MODAL */
 #brainModal {
   position: fixed; inset: 0; background: rgba(0,0,0,0.68);
@@ -221,14 +200,6 @@ canvas { border: 4px solid #000000; cursor: pointer; display: block; touch-actio
   </div>
 </div>
 
-<!-- HIDDEN INFO WINDOW -->
-<div id="infoModal" role="dialog" aria-modal="true" aria-labelledby="infoTitle" onclick="if(event.target===this)closeInfoWindow()">
-  <div class="modal-card">
-    <h2 id="infoTitle">GAME INFO</h2>
-    <div id="infoBody"></div>
-    <button class="btn" onclick="copyInfoReport()">COPY REPORT</button>
-    <button class="btn btn-dim" onclick="closeInfoWindow()">CLOSE</button>
-  </div>
 </div>
 
 <!-- EXPORT / IMPORT BRAIN MODAL -->
@@ -1906,16 +1877,11 @@ function doBrainImport(mode) {
 }
 
 /* ============================================================
-   HIDDEN TOOLS (start-screen title)
+   HIDDEN TOOL (start-screen title)
    Tapping the big TRAPT title on the start screen 5 times quickly (under
-   1.5 seconds between taps) switches the MOVE STRIP on or off.
-   The GAME INFO window further down (openInfoWindow) shows this device's
-   version, level settings, brain, scores and browser details, read from
-   THIS browser only; it currently has no tap trigger. The game has no
-   server and sends nothing anywhere. None of this is a security feature.
+   1.5 seconds between taps) switches the MOVE STRIP on or off. It is not
+   a security feature, only a convenience.
    ============================================================ */
-const GAME_VERSION = 'V1.7b';
-
 /* ---- Move strip: a running list of Myron's moves for this game.
    R = random move, T1-T5 = which of his top-5 ranked moves he picked,
    B = his single best move; "d2" = how many moves ahead he looked.
@@ -1949,47 +1915,6 @@ function titleTapped() {
   clearTimeout(titleTapTimer);
   titleTapTimer = setTimeout(() => { titleTapCount = 0; }, 1500);
   if (titleTapCount >= 5) { titleTapCount = 0; toggleStrip(); }
-}
-
-function buildInfoReport() {
-  ensureBrain();
-  const D = defaultWeights(), L = [];
-  L.push('TRAPT ' + GAME_VERSION);
-  L.push('Report time: ' + new Date().toLocaleString());
-  L.push('');
-  L.push('== LEVELS ==');
-  L.push('Selected level: ' + MYRON_LEVEL + '   Mode: ' + GAME_MODE);
-  for (const k in LEVELS) {
-    const c = LEVELS[k];
-    L.push(k + ': ' + Math.round(c.epsilon * 100) + '% random' + (c.topN ? ', else top-' + c.topN + ' move' : ', else best move'));
-  }
-  L.push('Search depth: ' + ENGINE_CFG.depth + ' (node budget ' + ENGINE_CFG.nodes + ')');
-  L.push('');
-  L.push("== MYRON'S BRAIN ==");
-  L.push('Games learned: ' + gamesLearned);
-  L.push('Losing lines: ' + countLines(lossBook) + ' (in ' + Object.keys(lossBook).length + ' positions, cap ' + MAX_LOSS_KEYS + ')');
-  L.push('Weights (now / default):');
-  for (const k in D) L.push('  ' + k + ': ' + Number(W[k]).toFixed(2) + ' / ' + D[k]);
-  L.push('');
-  L.push('== SCORES ==');
-  L.push('Player 1: ' + p1Score + '   Myron/P2: ' + p2Score);
-  L.push('');
-  L.push('== THIS BROWSER ==');
-  let used = 0;
-  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf('trapt') === 0) used += k.length + (localStorage.getItem(k) || '').length; } } catch (e) {}
-  L.push('Saved TRAPT data: ' + (used / 1024).toFixed(1) + ' KB');
-  L.push('Screen: ' + window.innerWidth + 'x' + window.innerHeight + ' (pixel ratio ' + (window.devicePixelRatio || 1) + ')');
-  L.push('Browser: ' + (navigator.userAgent || 'unknown'));
-  return L.join('\n');
-}
-function openInfoWindow() {
-  document.getElementById('infoBody').textContent = buildInfoReport();
-  document.getElementById('infoModal').classList.add('show');
-}
-function closeInfoWindow() { document.getElementById('infoModal').classList.remove('show'); }
-function copyInfoReport() {
-  const text = document.getElementById('infoBody').textContent;
-  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(() => {});
 }
 
 function openFirstModal() {
