@@ -152,6 +152,7 @@ canvas { border: 4px solid #000000; cursor: pointer; display: block; touch-actio
   #learn-badge { flex: 1 1 100%; }
   #loss-badge { flex: 1 1 100%; }
   #legend { flex: 1 1 auto; }
+  #moveStrip { flex: 1 1 auto; }
   .panel-btn { flex: 1 1 calc(33% - 8px); font-size: 11px; padding: 10px 4px; }
 }
 
@@ -183,6 +184,10 @@ canvas { border: 4px solid #000000; cursor: pointer; display: block; touch-actio
 }
 #score span { color: #ffffff; letter-spacing: 1px; }
 
+#moveStrip {
+  background: #eeeeee; color: #000000; padding: 6px 8px; font-size: 12px; line-height: 1.6;
+  font-weight: bold; max-height: 9em; overflow-y: auto; word-break: break-word;
+}
 #legend { font-size: clamp(11px, 2.8vw, 12px); color: #ffffff; line-height: 1.8; padding: 4px 0; font-weight: bold; }
 #legend span { display: inline-block; width: 10px; height: 10px;
   border-radius: 50%; margin-right: 5px; vertical-align: middle; }
@@ -303,6 +308,7 @@ canvas { border: 4px solid #000000; cursor: pointer; display: block; touch-actio
         <div><span style="background:#7B4A2D"></span> Player 1 (dark tan)</div>
         <div><span style="background:#B8865A"></span> Myron / P2 (tan)</div>
       </div>
+      <div id="moveStrip" style="display:none"></div>
       <button class="panel-btn" id="undo-btn" onclick="undoSelection()" style="display:none;border-color:#ffcc66;color:#ffcc66;">UNDO</button>
       <button class="panel-btn" onclick="nextGame()">NEXT GAME</button>
       <button class="panel-btn" onclick="resetScores()" style="font-size:12px;color:#aaddaa;border-color:#3a7a4a;">RESET SCORES</button>
@@ -939,19 +945,23 @@ function chooseTopNMove(kMoves, sk, N) {
   cands.sort((a, b) => b.score - a.score);
   const top = cands.slice(0, N);
   const pick = top[Math.floor(rng() * top.length)];
-  return { bestK: pick.bestK, bestP: pick.bestP };
+  return { bestK: pick.bestK, bestP: pick.bestP, meta: { type: 'T', rank: top.indexOf(pick) + 1, depth: ENGINE_CFG.depth } };
 }
 
 function chooseLevelMove(kMoves, sk) {
   const cfg = LEVELS[MYRON_LEVEL] || LEVELS.VETERAN;
   if (cfg.epsilon >= 1 || rng() < cfg.epsilon) {
-    return chooseRandomMove(kMoves);
+    const r = chooseRandomMove(kMoves);
+    r.meta = { type: 'R' };
+    return r;
   }
   if (cfg.topN) {
     return chooseTopNMove(kMoves, sk, cfg.topN);
   }
-  return iterativeDeepeningMove(kMoves, sk, ENGINE_CFG.depth, ENGINE_CFG.nodes,
-                                Infinity, Infinity, ENGINE_CFG.opts, []);
+  const res = iterativeDeepeningMove(kMoves, sk, ENGINE_CFG.depth, ENGINE_CFG.nodes,
+                                     Infinity, Infinity, ENGINE_CFG.opts, []);
+  res.meta = { type: 'B', depth: res.completedDepth };
+  return res;
 }
 
 function aiTurn() {
@@ -963,7 +973,9 @@ function aiTurn() {
   thinkEl.textContent = 'Myron is thinking…';
 
   const sk = stateKey(board, p1K, p2K);
-  const { bestK, bestP } = chooseLevelMove(kMoves, sk);
+  const choice = chooseLevelMove(kMoves, sk);
+  const { bestK, bestP } = choice;
+  pendingStripMeta = choice.meta || { type: 'R' };
   moveLog.push({keys: allSymmetricKeys(board, p1K, p2K, bestK, bestP), options: kMoves.length});
   runMyronMove(bestK, bestP, FLAVORS[MYRON_LEVEL] || FLAVORS.VETERAN);
 }
@@ -1010,6 +1022,7 @@ function runMyronMove(bestK, bestP, flavor) {
 }
 
 function finishMyronMove(flavor) {
+  pushStrip(pendingStripMeta); pendingStripMeta = null;
   featureLog.push(computeFeatures(board, p2K, p1K));
   const oppMoves = allShapes('P1', board, p1K, p2K).length;
   thinkEl.textContent = flavor.final(oppMoves);
@@ -1697,7 +1710,7 @@ function startGame(first) {
 
   initBoard();
   gameOver=false; gameWinner=null; selPawn=null; pendHead=null; pendFeet=[]; pendShapes=[]; savedKnight=null;
-  featureLog=[]; moveLog=[];
+  featureLog=[]; moveLog=[]; resetStrip();
   setUndoBtn(false);
   curPlayer=first; phase='KNIGHT_HEAD';
   updateScoreDisplay();
@@ -1893,20 +1906,49 @@ function doBrainImport(mode) {
 }
 
 /* ============================================================
-   HIDDEN INFO WINDOW
-   Tap the big TRAPT title on the start screen 5 times quickly (under 1.5 seconds between taps)
-   to open a window showing this device's game data: version, level
-   settings, Myron's brain, scores and browser details. Everything shown
-   is read from THIS browser only; the game has no server and sends
-   nothing anywhere. It is not a security feature, only a convenience.
+   HIDDEN TOOLS (start-screen title)
+   Tapping the big TRAPT title on the start screen 5 times quickly (under
+   1.5 seconds between taps) switches the MOVE STRIP on or off.
+   The GAME INFO window further down (openInfoWindow) shows this device's
+   version, level settings, brain, scores and browser details, read from
+   THIS browser only; it currently has no tap trigger. The game has no
+   server and sends nothing anywhere. None of this is a security feature.
    ============================================================ */
 const GAME_VERSION = 'V1.7b';
+
+/* ---- Move strip: a running list of Myron's moves for this game.
+   R = random move, T1-T5 = which of his top-5 ranked moves he picked,
+   B = his single best move; "d2" = how many moves ahead he looked.
+   Hidden by default; the same 5 quick taps on the start-screen title
+   switch it on and off. When on, it takes the place of the colour key. ---- */
+let stripOn = false, moveHistory = [], pendingStripMeta = null;
+function stripLabel(m) {
+  if (!m) return '?';
+  if (m.type === 'R') return 'R';
+  if (m.type === 'T') return 'T' + m.rank + ' d' + m.depth;
+  return 'B d' + m.depth;
+}
+function renderStrip() {
+  const el = document.getElementById('moveStrip'), leg = document.getElementById('legend');
+  if (!el || !leg) return;
+  const show = stripOn && GAME_MODE === 'HvM';
+  el.style.display = show ? 'block' : 'none';
+  leg.style.display = show ? 'none' : '';
+  if (show) el.innerHTML = "MYRON'S MOVES<br>" + (moveHistory.length ? moveHistory.join(' &middot; ') : '&mdash;');
+}
+function pushStrip(meta) { moveHistory.push(stripLabel(meta)); renderStrip(); }
+function resetStrip() { moveHistory = []; pendingStripMeta = null; renderStrip(); }
+function toggleStrip() {
+  stripOn = !stripOn;
+  renderStrip();
+  showTurnBanner('MOVE STRIP ' + (stripOn ? 'ON' : 'OFF'), '#aaddaa');
+}
 let titleTapCount = 0, titleTapTimer = null;
 function titleTapped() {
   titleTapCount++;
   clearTimeout(titleTapTimer);
   titleTapTimer = setTimeout(() => { titleTapCount = 0; }, 1500);
-  if (titleTapCount >= 5) { titleTapCount = 0; openInfoWindow(); }
+  if (titleTapCount >= 5) { titleTapCount = 0; toggleStrip(); }
 }
 
 function buildInfoReport() {
@@ -1976,7 +2018,7 @@ function resetForNextGame(first) {
   }
   initBoard();
   gameOver=false; gameWinner=null; selPawn=null; pendHead=null; pendFeet=[]; pendShapes=[]; savedKnight=null;
-  featureLog=[]; moveLog=[];
+  featureLog=[]; moveLog=[]; resetStrip();
   setUndoBtn(false);
   curPlayer=first; phase='KNIGHT_HEAD';
   updateScoreDisplay();
