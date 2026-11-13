@@ -105,6 +105,23 @@ body { background: #1a5c2a; color: #ffffff; font-family: 'Courier New', monospac
 #stripDefs span { flex: 1 1 auto; }
 #stripModal .btn { width: 100%; padding: 12px 10px; }
 
+#againModal {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.68);
+  display: none; align-items: center; justify-content: center;
+  z-index: 340; padding: 16px;
+}
+#againModal.show { display: flex; }
+#againModal .modal-card {
+  background: #123d1c; border: 3px solid #ffffff;
+  padding: 20px 18px; display: flex; flex-direction: column;
+  align-items: stretch; gap: 12px; width: min(380px, 94vw);
+  box-shadow: 0 0 40px rgba(0,0,0,0.75);
+}
+#againModal h2 { font-size: clamp(18px, 5vw, 22px); letter-spacing: 4px; text-align: center; }
+#againModal .sub { font-size: 12px; letter-spacing: 1px; color: #ccffcc; text-align: center; line-height: 1.5; min-height: 3em; }
+#againModal .btn { width: 100%; padding: 12px 10px; }
+#againModal .btn[disabled] { opacity: 0.4; pointer-events: none; }
+
 /* EXPORT / IMPORT BRAIN MODAL */
 #brainModal {
   position: fixed; inset: 0; background: rgba(0,0,0,0.68);
@@ -245,6 +262,16 @@ canvas { border: 4px solid #000000; cursor: pointer; display: block; touch-actio
       <div><b>d1, d2</b><span>How many moves ahead he looked</span></div>
     </div>
     <button class="btn" onclick="closeStripModal()">CLOSE</button>
+  </div>
+</div>
+
+<!-- ONLINE: PLAY AGAIN? -->
+<div id="againModal" role="dialog" aria-modal="true" aria-labelledby="againTitle">
+  <div class="modal-card">
+    <h2 id="againTitle">PLAY AGAIN?</h2>
+    <p class="sub" id="againSub">Both players must choose YES to start the next game.</p>
+    <button class="btn" id="againYesBtn" onclick="againYes()">YES</button>
+    <button class="btn btn-dim" onclick="againNo()">NO</button>
   </div>
 </div>
 
@@ -597,14 +624,14 @@ function setUndoBtn(visible) {
 }
 
 let bannerTimer = null;
-function showTurnBanner(text, color) {
+function showTurnBanner(text, color, sticky) {
   const el = document.getElementById('turn-banner');
   if (!el) return;
   el.textContent = text;
   el.style.borderColor = color;
   el.classList.add('show');
   clearTimeout(bannerTimer);
-  bannerTimer = setTimeout(() => { el.classList.remove('show'); }, 1600);
+  if (!sticky) bannerTimer = setTimeout(() => { el.classList.remove('show'); }, 1600);
 }
 function hideTurnBanner() {
   const el = document.getElementById('turn-banner');
@@ -1617,6 +1644,7 @@ function endGame(winner) {
     `<span style="color:${col}">${pName(winner)} wins!</span><br>`+
     `<small style="color:#aaddaa">Opponent had no legal knight move.</small><br>`+
     `<small style="color:#ccffcc">Select NEXT GAME or RESET SCORES below.</small>`;
+  if (GAME_MODE==='ONLINE') setTimeout(() => { if (GAME_MODE==='ONLINE' && gameOver && !NET.dead && !NET.yes) showAgain(); }, 2200);
   thinkEl.textContent=GAME_MODE==='ONLINE'?'':(winner==='P2'?'Myron is satisfied.':'Myron takes notes for next time…');
 }
 
@@ -1624,6 +1652,7 @@ function handleCanvasInput(clientX, clientY) {
   if (gameOver) return;
   if (GAME_MODE==='HvM' && curPlayer==='P2') return;
   if (GAME_MODE==='ONLINE' && (curPlayer!==NET.role || NET.dead)) return;
+  if (GAME_MODE==='ONLINE' && !NET.started) { NET.started = true; hideTurnBanner(); netSend({ t: 'started' }); }
   const rect=canvas.getBoundingClientRect();
   const scaleX=canvas.width/rect.width, scaleY=canvas.height/rect.height;
   const x=(clientX-rect.left)*scaleX, y=(clientY-rect.top)*scaleY;
@@ -1713,7 +1742,8 @@ function afterPawnMove(prev) {
   if (GAME_MODE==='HvM') {
     if (curPlayer==='P2') showTurnBanner("MYRON'S TURN", '#B8865A');
   } else if (GAME_MODE==='ONLINE') {
-    showTurnBanner(curPlayer===NET.role ? 'YOUR TURN' : pName(curPlayer).toUpperCase()+"'S TURN", curPlayer==='P1'?'#7B4A2D':'#B8865A');
+    NET.started = false;
+    showTurnBanner(curPlayer===NET.role ? 'YOUR TURN' : pName(curPlayer).toUpperCase()+"'S TURN", curPlayer==='P1'?'#7B4A2D':'#B8865A', true);
   } else {
     showTurnBanner(pName(curPlayer).toUpperCase()+"'S TURN", curPlayer==='P1'?'#7B4A2D':'#B8865A');
   }
@@ -1786,7 +1816,7 @@ function startGame(first) {
 }
 
 function nextGame() {
-  if (GAME_MODE==='ONLINE') { if (gameOver && !NET.dead) onlineNext(true); return; }
+  if (GAME_MODE==='ONLINE') { if (gameOver && !NET.dead) showAgain(); return; }
   // After a finished game, ask who should move first in the next one.
   if (gameOver) { openFirstModal(); return; }
   // Mid-game restart keeps the original behaviour.
@@ -2102,7 +2132,7 @@ function resetScores() {
    (PeerJS), loaded only when someone chooses HOST or JOIN, so the
    rest of the game never depends on it. Host = internal seat P1.
    ============================================================ */
-const NET = { peer: null, conn: null, role: null, names: { P1: '', P2: '' }, lastFirst: null, dead: false };
+const NET = { peer: null, conn: null, role: null, names: { P1: '', P2: '' }, lastFirst: null, dead: false, started: false, yes: false, theyYes: false };
 const PEER_SRC = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 function $id(x) { return document.getElementById(x); }
@@ -2187,7 +2217,7 @@ function wireConn(c) {
 function netSend(o) { try { if (NET.conn && NET.conn.open) NET.conn.send(o); } catch (e) {} }
 
 function onNetClosed() {
-  NET.dead = true;
+  NET.dead = true; hideAgain();
   if (GAME_MODE !== 'ONLINE') { onMsg('Opponent left before the game began.'); return; }
   const other = netName(NET.role === 'P1' ? 'P2' : 'P1');
   statusEl.innerHTML = `${other} disconnected.<br><small style="color:#ccffcc">Select CHANGE MODE to leave.</small>`;
@@ -2209,8 +2239,11 @@ function onNetData(d) {
     NET.names.P2 = cleanName(d.guest) || NET.names.P2;
   } else if (d.t === 'start' && NET.role === 'P2' && (d.first === 'P1' || d.first === 'P2')) {
     NET.lastFirst = d.first; startOnline(d.first);
-  } else if (d.t === 'next') {
-    if (GAME_MODE === 'ONLINE' && gameOver) onlineNext(false);
+  } else if (d.t === 'started') {
+    if (GAME_MODE === 'ONLINE' && !gameOver && curPlayer !== NET.role) hideTurnBanner();
+  } else if (d.t === 'again') {
+    NET.theyYes = true;
+    if (GAME_MODE === 'ONLINE' && gameOver) { showAgain(); checkAgain(); }
   } else if (d.t === 'reset') {
     p1Score = 0; p2Score = 0; updateScoreDisplay();
   } else if (d.t === 'move') {
@@ -2221,14 +2254,29 @@ function onNetData(d) {
 function startOnline(first) {
   GAME_MODE = 'ONLINE'; p1Score = 0; p2Score = 0;
   startGame(first);
-  showTurnBanner(first === NET.role ? 'YOUR TURN' : pName(first).toUpperCase() + "'S TURN", first === 'P1' ? '#7B4A2D' : '#B8865A');
+  NET.started = false; NET.yes = false; NET.theyYes = false;
+  showTurnBanner(first === NET.role ? 'YOUR TURN' : pName(first).toUpperCase() + "'S TURN", first === 'P1' ? '#7B4A2D' : '#B8865A', true);
 }
-function onlineNext(send) {
+function otherName() { return netName(NET.role === 'P1' ? 'P2' : 'P1'); }
+function showAgain() {
+  const m = $id('againModal');
+  $id('againYesBtn').disabled = NET.yes;
+  $id('againSub').textContent = NET.yes ? 'Waiting for ' + otherName() + '…'
+    : (NET.theyYes ? otherName() + ' wants to play again.' : 'Both players must choose YES to start the next game.');
+  m.classList.add('show');
+}
+function hideAgain() { $id('againModal').classList.remove('show'); }
+function againYes() { NET.yes = true; netSend({ t: 'again' }); showAgain(); checkAgain(); }
+function againNo() { hideAgain(); goHome(); }
+function checkAgain() {
+  if (NET.yes && NET.theyYes && gameOver && !NET.dead) { hideAgain(); onlineNext(); }
+}
+function onlineNext() {
   const first = NET.lastFirst === 'P1' ? 'P2' : 'P1';
   NET.lastFirst = first;
-  if (send) netSend({ t: 'next' });
   resetForNextGame(first);
-  showTurnBanner(first === NET.role ? 'YOUR TURN' : pName(first).toUpperCase() + "'S TURN", first === 'P1' ? '#7B4A2D' : '#B8865A');
+  NET.started = false; NET.yes = false; NET.theyYes = false;
+  showTurnBanner(first === NET.role ? 'YOUR TURN' : pName(first).toUpperCase() + "'S TURN", first === 'P1' ? '#7B4A2D' : '#B8865A', true);
 }
 
 function applyRemoteMove(d) {
@@ -2246,7 +2294,8 @@ function applyRemoteMove(d) {
 function onlineLeave() {
   try { if (NET.conn) { const c = NET.conn; NET.conn = null; c.close(); } } catch (e) {}
   try { if (NET.peer) { const p = NET.peer; NET.peer = null; p.destroy(); } } catch (e) {}
-  NET.role = null; NET.dead = false; NET.lastFirst = null;
+  hideAgain();
+  NET.role = null; NET.dead = false; NET.lastFirst = null; NET.started = false; NET.yes = false; NET.theyYes = false;
   if (GAME_MODE === 'ONLINE') {
     GAME_MODE = 'HvM';
     p1Score = parseInt(localStorage.getItem('trapt17b_p1') || '0');
