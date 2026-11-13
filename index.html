@@ -188,6 +188,10 @@ canvas { border: 4px solid #000000; cursor: pointer; display: block; touch-actio
   background: #eeeeee; color: #000000; padding: 6px 8px; font-size: 12px; line-height: 1.6;
   font-weight: bold; max-height: 9em; overflow-y: auto; word-break: break-word;
 }
+#moveStrip .stripWrap { display: flex; gap: 12px; align-items: flex-start; }
+#moveStrip .stripGrid { display: grid; grid-template-columns: repeat(5, 2.1em); flex: 0 0 auto; text-align: center; font-weight: bold; border: 1px solid #000; }
+#moveStrip .stripGrid span { border: 1px solid #bbbbbb; line-height: 1.5; }
+#moveStrip .stripText { flex: 1 1 auto; min-width: 0; }
 #legend { font-size: clamp(11px, 2.8vw, 12px); color: #ffffff; line-height: 1.8; padding: 4px 0; font-weight: bold; }
 #legend span { display: inline-block; width: 10px; height: 10px;
   border-radius: 50%; margin-right: 5px; vertical-align: middle; }
@@ -978,6 +982,7 @@ function aiTurn() {
   if (kMoves.length===0) { endGame('P1'); drawAll(); return; }
 
   thinkEl.textContent = 'Myron is thinking…';
+  stripHint = ''; renderStrip();
 
   const sk = stateKey(board, p1K, p2K);
   const choice = chooseLevelMove(kMoves, sk);
@@ -1040,6 +1045,7 @@ function finishMyronMove(flavor) {
   updateStatus();
   showTurnBanner('YOUR TURN', '#7B4A2D');
   pulseStatus();
+  setTimeout(refreshStripHint, 0);
 }
 
 /* ============================================================
@@ -1559,6 +1565,7 @@ function endGame(winner) {
   gameOver=true;
   gameWinner=winner;
   hideTurnBanner();
+  stripHint = ''; renderStrip();
   const col=winner==='P1'?'#7B4A2D':'#B8865A';
   if (winner==='P1') { p1Score++; localStorage.setItem('trapt17b_p1',p1Score); }
   else               { p2Score++; localStorage.setItem('trapt17b_p2',p2Score); }
@@ -1726,7 +1733,7 @@ function startGame(first) {
   if (GAME_MODE==='HvM' && curPlayer==='P2') {
     showTurnBanner("MYRON'S TURN", '#B8865A');
     setTimeout(aiTurn,800);
-  }
+  } else if (GAME_MODE==='HvM') { setTimeout(refreshStripHint, 0); }
 }
 
 function nextGame() {
@@ -1930,20 +1937,53 @@ function stripLabel(m) {
   if (m.type === 'T') return 'T' + m.rank + ' d' + m.depth;
   return 'B d' + m.depth;
 }
+let stripHint = '';
+function stripName() {
+  return ({NOVICE:'NOVICE', VETERAN:'VETERAN', MASTER:'MASTER'})[MYRON_LEVEL] || 'MYRON';
+}
 function renderStrip() {
   const el = document.getElementById('moveStrip'), leg = document.getElementById('legend');
   if (!el || !leg) return;
   const show = stripOn && GAME_MODE === 'HvM';
   el.style.display = show ? 'block' : 'none';
   leg.style.display = show ? 'none' : '';
-  if (show) el.innerHTML = "MYRON'S MOVES<br>" + (moveHistory.length ? moveHistory.join(' &middot; ') : '&mdash;');
+  if (!show) return;
+  let grid = '';
+  for (let i = 0; i < 25; i++) grid += '<span>' + i + '</span>';
+  el.innerHTML = '<div class="stripWrap"><div class="stripGrid">' + grid + '</div><div class="stripText">' +
+    stripName() + "'S MOVES<br>" + (moveHistory.length ? moveHistory.join(' &middot; ') : '&mdash;') +
+    (stripHint ? '<br>' + stripHint : '') + '</div></div>';
+}
+/* Display only: what a Master-level engine would play for Player One in the
+   current position. Runs the real search on a mirrored copy of the position,
+   then puts every global back exactly as it was. Uses no random numbers. */
+function refreshStripHint() {
+  stripHint = '';
+  if (!stripOn || GAME_MODE !== 'HvM' || gameOver || curPlayer !== 'P1') { renderStrip(); return; }
+  const sb = board, s1 = p1K, s2 = p2K, sn = nodeCount, sl = nodeLimit;
+  try {
+    board = sb.map(v => v === 1 ? 2 : v === 2 ? 1 : v);
+    p1K = s2.slice(); p2K = s1.slice();
+    const kMoves = allShapes('P2', board, p1K, p2K);
+    if (kMoves.length) {
+      const sk = stateKey(board, p1K, p2K);
+      const r = iterativeDeepeningMove(kMoves, sk, ENGINE_CFG.depth, ENGINE_CFG.nodes,
+                                       Infinity, Infinity, ENGINE_CFG.opts, []);
+      if (r && r.bestK) {
+        stripHint = r.bestK[0] + '-' + r.bestK[r.bestK.length - 1] +
+                    (r.bestP ? ', ' + r.bestP.from + '-' + r.bestP.to : '');
+      }
+    }
+  } catch (e) { stripHint = ''; }
+  board = sb; p1K = s1; p2K = s2; nodeCount = sn; nodeLimit = sl;
+  renderStrip();
 }
 function pushStrip(meta) { moveHistory.push(stripLabel(meta)); renderStrip(); }
-function resetStrip() { moveHistory = []; pendingStripMeta = null; renderStrip(); }
+function resetStrip() { moveHistory = []; pendingStripMeta = null; stripHint = ''; renderStrip(); }
 function toggleStrip() {
   stripOn = !stripOn;
   renderStrip();
-  if (stripOn) document.getElementById('stripModal').classList.add('show');
+  if (stripOn) { document.getElementById('stripModal').classList.add('show'); refreshStripHint(); }
   else showTurnBanner('MOVE STRIP OFF', '#aaddaa');
 }
 function closeStripModal() { document.getElementById('stripModal').classList.remove('show'); }
@@ -1990,7 +2030,7 @@ function resetForNextGame(first) {
   if (GAME_MODE==='HvM' && curPlayer==='P2') {
     showTurnBanner("MYRON'S TURN", '#B8865A');
     setTimeout(aiTurn,800);
-  }
+  } else if (GAME_MODE==='HvM') { setTimeout(refreshStripHint, 0); }
 }
 
 function resetScores() {
