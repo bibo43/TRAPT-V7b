@@ -644,22 +644,26 @@ function pulseStatus() {
 }
 
 function undoSelection() {
-  if (gameOver) return;
+  if (gameOver || animBusy) return;
   if (phase === 'PAWN_TO') {
     selPawn = null;
     phase = 'PAWN_FROM';
     setUndoBtn(false);
     drawAll(); updateStatus();
   } else if (phase === 'PAWN_FROM') {
+    let slid = false;
     if (savedKnight) {
-      setK(curPlayer, savedKnight);
+      const cur = (curPlayer==='P1' ? p1K : p2K).slice(), back = savedKnight;
+      setK(curPlayer, back);
       savedKnight = null;
       if (GAME_MODE==='ONLINE') netSend({ t: 'undoknight' });
+      animKnight(curPlayer, cur, back, 350); slid = true;
     }
     phase = 'KNIGHT_HEAD';
     selPawn = null;
     setUndoBtn(false);
-    drawAll(); updateStatus();
+    if (!slid) drawAll();
+    updateStatus();
   } else if (phase === 'KNIGHT_FOOT') {
     pendHead = null; pendFeet = []; pendShapes = [];
     phase = 'KNIGHT_HEAD';
@@ -1557,7 +1561,9 @@ function pixelCentroid(cells) {
 }
 function easeInOutQuad(t) { return t<0.5 ? 2*t*t : -1+(4-2*t)*t; }
 
-function animateKnightMove(oldCells, newCells, duration, callback) {
+function animateKnightMove(oldCells, newCells, duration, callback, seat) {
+  const isP1 = seat === 'P1';
+  const kc = isP1 ? ['#8B2500','#1a0000','#ffffff'] : ['#D4691E','#3a1800','#000000'];
   const oldC = pixelCentroid(oldCells);
   const newC = pixelCentroid(newCells);
   const dx = newC.x - oldC.x, dy = newC.y - oldC.y;
@@ -1565,16 +1571,16 @@ function animateKnightMove(oldCells, newCells, duration, callback) {
   function frame(now) {
     const t = Math.min(1, (now-start)/duration);
     const te = easeInOutQuad(t);
-    drawAll({skipP2:true});
+    drawAll(isP1 ? {skipP1:true} : {skipP2:true});
     ctx.save();
     ctx.globalAlpha = 1 - te;
     ctx.translate(dx*te, dy*te);
-    drawKnight(oldCells, '#D4691E', '#3a1800', '#000000');
+    drawKnight(oldCells, kc[0], kc[1], kc[2]);
     ctx.restore();
     ctx.save();
     ctx.globalAlpha = te;
     ctx.translate(-dx*(1-te), -dy*(1-te));
-    drawKnight(newCells, '#D4691E', '#3a1800', '#000000');
+    drawKnight(newCells, kc[0], kc[1], kc[2]);
     ctx.restore();
     if (t < 1) requestAnimationFrame(frame);
     else callback();
@@ -1582,7 +1588,7 @@ function animateKnightMove(oldCells, newCells, duration, callback) {
   requestAnimationFrame(frame);
 }
 
-function animatePawnMove(fromCell, toCell, pawnVal, duration, callback) {
+function animatePawnMove(fromCell, toCell, pawnVal, duration, callback, landed) {
   const {r:fr,c:fc} = rc(fromCell); const fx=fc*CELL+CELL/2, fy=fr*CELL+CELL/2;
   const {r:tr,c:tc} = rc(toCell);   const tx=tc*CELL+CELL/2, ty=tr*CELL+CELL/2;
   const start = performance.now();
@@ -1591,12 +1597,27 @@ function animatePawnMove(fromCell, toCell, pawnVal, duration, callback) {
     const te = easeInOutQuad(t);
     const cx = fx + (tx-fx)*te;
     const cy = fy + (ty-fy)*te;
-    drawAll({skipPawnAt: fromCell});
+    drawAll({skipPawnAt: landed ? toCell : fromCell});
     draw3DPawn(cx, cy, CELL*0.23, pawnVal===1?'#8B2500':'#D4691E', false);
     if (t < 1) requestAnimationFrame(frame);
     else callback();
   }
   requestAnimationFrame(frame);
+}
+
+/* Move animation for every player and mode. The game state is already updated
+   when these run; they only change how the move is drawn. Taps are ignored
+   while a move is sliding so a selection can't land mid-animation. */
+let animBusy = false, animToken = 0;
+function animKnight(seat, oldK, newK, ms) {
+  const tok = ++animToken; animBusy = true;
+  animateKnightMove(oldK, newK, ms, () => { if (tok === animToken) animBusy = false; drawAll(); }, seat);
+  setTimeout(() => { if (tok === animToken) animBusy = false; }, ms + 400);
+}
+function animPawn(from, to, val, ms) {
+  const tok = ++animToken; animBusy = true;
+  animatePawnMove(from, to, val, ms, () => { if (tok === animToken) animBusy = false; drawAll(); }, true);
+  setTimeout(() => { if (tok === animToken) animBusy = false; }, ms + 400);
 }
 
 function pName(p) { if (GAME_MODE==='ONLINE') return netName(p); return p==='P1'?'Player 1':(GAME_MODE==='HvM'?'Myron':'Player 2'); }
@@ -1651,6 +1672,7 @@ function endGame(winner) {
 
 function handleCanvasInput(clientX, clientY) {
   if (gameOver) return;
+  if (animBusy) return;
   if (GAME_MODE==='HvM' && curPlayer==='P2') return;
   if (GAME_MODE==='ONLINE' && (curPlayer!==NET.role || NET.dead)) return;
   if (GAME_MODE==='ONLINE' && !NET.started) { NET.started = true; hideTurnBanner(); netSend({ t: 'started' }); }
@@ -1686,7 +1708,7 @@ function handleHead(i) {
     pendHead=null; pendFeet=[]; pendShapes=[];
     setUndoBtn(true);
     if (GAME_MODE==='ONLINE') netSend({ t: 'knight', k: matching[0].slice() });
-    drawAll(); updateStatus();
+    animKnight(curPlayer, savedKnight, matching[0], 500); updateStatus();
   } else {
     pendHead=i; pendFeet=feet; pendShapes=matching;
     phase='KNIGHT_FOOT';
@@ -1709,7 +1731,7 @@ function handleFoot(i) {
   phase='PAWN_FROM'; selPawn=null;
   setUndoBtn(true);
   if (GAME_MODE==='ONLINE') netSend({ t: 'knight', k: chosen.slice() });
-  drawAll(); updateStatus();
+  animKnight(curPlayer, savedKnight, chosen, 500); updateStatus();
 }
 
 function handlePawnFrom(i) {
@@ -1733,6 +1755,7 @@ function handlePawnTo(i) {
   savedKnight=null;
   if (GAME_MODE==='ONLINE') netSend({t:'move', k:(curPlayer==='P1'?p1K:p2K).slice(), pf:from, pt:i});
   afterPawnMove(curPlayer);
+  animPawn(from, i, val, 450);
 }
 
 function afterPawnMove(prev) {
@@ -2245,7 +2268,10 @@ function onNetData(d) {
   } else if (d.t === 'knight') {
     previewKnight(d.k);
   } else if (d.t === 'undoknight') {
-    clearPreview(); drawAll();
+    if (NET.preview) {
+      const seat = NET.previewSeat, cur = (seat === 'P1' ? p1K : p2K).slice(), back = NET.preview;
+      clearPreview(); animKnight(seat, cur, back, 350);
+    }
   } else if (d.t === 'started') {
     if (GAME_MODE === 'ONLINE' && !gameOver && curPlayer !== NET.role) hideTurnBanner();
   } else if (d.t === 'again') {
@@ -2298,8 +2324,9 @@ function previewKnight(k) {
   if (!allShapes(curPlayer, board, p1K, p2K).some(sh => sh.every((v, i) => v === k[i]))) return;
   NET.previewSeat = curPlayer;
   NET.preview = (curPlayer === 'P1' ? p1K : p2K).slice();
+  const oldK = NET.preview;
   setK(curPlayer, k.slice());
-  drawAll();
+  animKnight(curPlayer, oldK, k, 500);
 }
 
 function applyRemoteMove(d) {
@@ -2313,6 +2340,7 @@ function applyRemoteMove(d) {
   if (d.pf < 0 || d.pf > 24 || d.pt < 0 || d.pt > 24 || board[d.pf] !== val || isOcc(d.pt, board, p1K, p2K)) { drawAll(); return; }
   board[d.pt] = val; board[d.pf] = 0;
   afterPawnMove(curPlayer);
+  animPawn(d.pf, d.pt, val, 450);
 }
 
 function onlineLeave() {
