@@ -11,7 +11,7 @@ body { background: #1a5c2a; color: #ffffff; font-family: 'Courier New', monospac
 #turn-banner {
   position: fixed; top: 18%; left: 50%;
   transform: translate(-50%, -50%) scale(0.75);
-  background: rgba(250, 246, 234, 0.95);
+  background: rgba(250, 246, 234, 0.55);
   border: 3px solid #ffffff;
   padding: 16px 34px;
   font-family: 'Courier New', monospace;
@@ -654,6 +654,7 @@ function undoSelection() {
     if (savedKnight) {
       setK(curPlayer, savedKnight);
       savedKnight = null;
+      if (GAME_MODE==='ONLINE') netSend({ t: 'undoknight' });
     }
     phase = 'KNIGHT_HEAD';
     selPawn = null;
@@ -1684,6 +1685,7 @@ function handleHead(i) {
     phase='PAWN_FROM'; selPawn=null;
     pendHead=null; pendFeet=[]; pendShapes=[];
     setUndoBtn(true);
+    if (GAME_MODE==='ONLINE') netSend({ t: 'knight', k: matching[0].slice() });
     drawAll(); updateStatus();
   } else {
     pendHead=i; pendFeet=feet; pendShapes=matching;
@@ -1706,6 +1708,7 @@ function handleFoot(i) {
   pendHead=null; pendFeet=[]; pendShapes=[];
   phase='PAWN_FROM'; selPawn=null;
   setUndoBtn(true);
+  if (GAME_MODE==='ONLINE') netSend({ t: 'knight', k: chosen.slice() });
   drawAll(); updateStatus();
 }
 
@@ -2132,7 +2135,7 @@ function resetScores() {
    (PeerJS), loaded only when someone chooses HOST or JOIN, so the
    rest of the game never depends on it. Host = internal seat P1.
    ============================================================ */
-const NET = { peer: null, conn: null, role: null, names: { P1: '', P2: '' }, lastFirst: null, dead: false, started: false, yes: false, theyYes: false };
+const NET = { peer: null, conn: null, role: null, names: { P1: '', P2: '' }, lastFirst: null, dead: false, started: false, yes: false, theyYes: false, preview: null, previewSeat: null };
 const PEER_SRC = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 function $id(x) { return document.getElementById(x); }
@@ -2239,6 +2242,10 @@ function onNetData(d) {
     NET.names.P2 = cleanName(d.guest) || NET.names.P2;
   } else if (d.t === 'start' && NET.role === 'P2' && (d.first === 'P1' || d.first === 'P2')) {
     NET.lastFirst = d.first; startOnline(d.first);
+  } else if (d.t === 'knight') {
+    previewKnight(d.k);
+  } else if (d.t === 'undoknight') {
+    clearPreview(); drawAll();
   } else if (d.t === 'started') {
     if (GAME_MODE === 'ONLINE' && !gameOver && curPlayer !== NET.role) hideTurnBanner();
   } else if (d.t === 'again') {
@@ -2279,8 +2286,25 @@ function onlineNext() {
   showTurnBanner(first === NET.role ? 'YOUR TURN' : pName(first).toUpperCase() + "'S TURN", first === 'P1' ? '#7B4A2D' : '#B8865A', true);
 }
 
+/* Mirror the mover's board: show his knight as soon as he places it, and put
+   it back if he undoes. The saved copy is the knight's real position, so the
+   final move is still checked against the true board. */
+function clearPreview() {
+  if (NET.preview) { setK(NET.previewSeat, NET.preview); NET.preview = null; }
+}
+function previewKnight(k) {
+  if (GAME_MODE !== 'ONLINE' || gameOver || curPlayer === NET.role || !validCells(k)) return;
+  clearPreview();
+  if (!allShapes(curPlayer, board, p1K, p2K).some(sh => sh.every((v, i) => v === k[i]))) return;
+  NET.previewSeat = curPlayer;
+  NET.preview = (curPlayer === 'P1' ? p1K : p2K).slice();
+  setK(curPlayer, k.slice());
+  drawAll();
+}
+
 function applyRemoteMove(d) {
   if (GAME_MODE !== 'ONLINE' || gameOver || curPlayer === NET.role) return;
+  clearPreview();
   if (!validCells(d.k) || !Number.isInteger(d.pf) || !Number.isInteger(d.pt)) return;
   const shapes = allShapes(curPlayer, board, p1K, p2K);
   if (!shapes.some(sh => sh.every((v, i) => v === d.k[i]))) return;
@@ -2294,7 +2318,7 @@ function applyRemoteMove(d) {
 function onlineLeave() {
   try { if (NET.conn) { const c = NET.conn; NET.conn = null; c.close(); } } catch (e) {}
   try { if (NET.peer) { const p = NET.peer; NET.peer = null; p.destroy(); } } catch (e) {}
-  hideAgain();
+  hideAgain(); NET.preview = null;
   NET.role = null; NET.dead = false; NET.lastFirst = null; NET.started = false; NET.yes = false; NET.theyYes = false;
   if (GAME_MODE === 'ONLINE') {
     GAME_MODE = 'HvM';
