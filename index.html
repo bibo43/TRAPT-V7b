@@ -58,6 +58,12 @@ body { background: #1a5c2a; color: #ffffff; font-family: 'Courier New', monospac
 #modeDiv { display: none; flex-direction: column; gap: 10px; width: min(280px, 85vw); }
 #diffDiv  { display: none; flex-direction: column; gap: 10px; width: min(280px, 85vw); align-items: center; }
 #diffDiv p { font-size: clamp(11px, 3vw, 14px); letter-spacing: 2px; color: #ccffcc; font-weight: bold; }
+#onlineDiv { display: none; flex-direction: column; gap: 10px; width: min(280px, 85vw); align-items: center; }
+#onlineDiv p { font-size: clamp(11px, 3vw, 14px); letter-spacing: 2px; color: #ccffcc; font-weight: bold; text-align: center; }
+#onlineDiv input { width: min(280px, 85vw); box-sizing: border-box; background: #eeeeee; color: #000000; border: 1px solid #ffffff;
+  padding: 12px; font-size: 16px; font-weight: bold; font-family: 'Courier New', monospace; text-align: center; letter-spacing: 2px; }
+#onCodeShow { background: #eeeeee; color: #000000; font-size: 38px; font-weight: bold; letter-spacing: 10px; padding: 8px 8px 8px 18px; }
+#onMsg { color: #ffcc66 !important; min-height: 1.4em; }
 #firstDiv { display: none; flex-direction: column; gap: 10px; width: min(280px, 85vw); align-items: center; }
 #firstDiv p { font-size: clamp(11px, 3vw, 14px); letter-spacing: 2px; color: #ccffcc; font-weight: bold; }
 
@@ -285,6 +291,29 @@ canvas { border: 4px solid #000000; cursor: pointer; display: block; touch-actio
   <div id="modeDiv">
     <button class="btn" onclick="setMode('HvH')">HUMAN VS HUMAN</button>
     <button class="btn" onclick="showDiff()">HUMAN VS MYRON</button>
+    <button class="btn" onclick="showOnline()">PLAY ONLINE</button>
+  </div>
+
+  <div id="onlineDiv">
+    <p>PLAY ONLINE</p>
+    <p style="font-size:11px;letter-spacing:1px">YOUR NAME</p>
+    <input id="onName" maxlength="12" autocomplete="off" placeholder="TYPE YOUR NAME">
+    <div id="onChoose" style="display:flex;flex-direction:column;gap:10px;align-items:center">
+      <button class="btn" onclick="onlineHost()">HOST A GAME</button>
+      <button class="btn" onclick="onlineShowJoin()">JOIN A GAME</button>
+    </div>
+    <div id="onJoin" style="display:none;flex-direction:column;gap:10px;align-items:center">
+      <p style="font-size:11px;letter-spacing:1px">GAME CODE</p>
+      <input id="onCode" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="CODE">
+      <button class="btn" onclick="onlineJoin()">JOIN</button>
+    </div>
+    <div id="onHost" style="display:none;flex-direction:column;gap:10px;align-items:center">
+      <p>GIVE THIS CODE TO YOUR OPPONENT</p>
+      <div id="onCodeShow">----</div>
+      <p style="font-size:11px;letter-spacing:1px">WAITING FOR AN OPPONENT TO JOIN&hellip;</p>
+    </div>
+    <p id="onMsg"></p>
+    <button class="btn btn-dim" onclick="onlineBack()">BACK</button>
   </div>
 
   <div id="diffDiv">
@@ -316,8 +345,8 @@ canvas { border: 4px solid #000000; cursor: pointer; display: block; touch-actio
       <div id="learn-badge">GAMES LEARNED: 0</div>
       <div id="loss-badge">AVOIDING 0 LOSING LINES</div>
       <div id="legend">
-        <div><span style="background:#7B4A2D"></span> Player 1 (dark tan)</div>
-        <div><span style="background:#B8865A"></span> Myron / P2 (tan)</div>
+        <div><span style="background:#7B4A2D"></span> <span id="lg1" style="background:none;width:auto;height:auto;border-radius:0;margin:0;display:inline">Player 1</span> (dark tan)</div>
+        <div><span style="background:#B8865A"></span> <span id="lg2" style="background:none;width:auto;height:auto;border-radius:0;margin:0;display:inline">Myron / P2</span> (tan)</div>
       </div>
       <div id="moveStrip" style="display:none"></div>
       <button class="panel-btn" id="undo-btn" onclick="undoSelection()" style="display:none;border-color:#ffcc66;color:#ffcc66;">UNDO</button>
@@ -1542,12 +1571,16 @@ function animatePawnMove(fromCell, toCell, pawnVal, duration, callback) {
   requestAnimationFrame(frame);
 }
 
-function pName(p) { return p==='P1'?'Player 1':(GAME_MODE==='HvM'?'Myron':'Player 2'); }
+function pName(p) { if (GAME_MODE==='ONLINE') return netName(p); return p==='P1'?'Player 1':(GAME_MODE==='HvM'?'Myron':'Player 2'); }
 
 function updateStatus() {
   if (gameOver) return;
   const col=curPlayer==='P1'?'#7B4A2D':'#B8865A';
   const who=pName(curPlayer);
+  if (GAME_MODE==='ONLINE' && curPlayer!==NET.role) {
+    statusEl.innerHTML=`Waiting for <span style="color:${col}">${who}</span>&hellip;`;
+    return;
+  }
   let msg='';
   if      (phase==='KNIGHT_HEAD') msg=`select your knight's new <strong>HEAD</strong> square`;
   else if (phase==='KNIGHT_FOOT') msg=`select the <strong>FOOT</strong> square`;
@@ -1557,6 +1590,13 @@ function updateStatus() {
 }
 
 function updateScoreDisplay() {
+  document.getElementById('lg1').textContent = GAME_MODE==='ONLINE' ? netName('P1') : 'Player 1';
+  document.getElementById('lg2').textContent = GAME_MODE==='ONLINE' ? netName('P2') : 'Myron / P2';
+  if (GAME_MODE==='ONLINE') {
+    document.getElementById('p1score').textContent=netName('P1').toUpperCase()+': '+p1Score;
+    document.getElementById('p2score').textContent=netName('P2').toUpperCase()+': '+p2Score;
+    return;
+  }
   document.getElementById('p1score').textContent='P1: '+p1Score;
   document.getElementById('p2score').textContent=(GAME_MODE==='HvM'?'MYRON':'P2')+': '+p2Score;
 }
@@ -1567,8 +1607,9 @@ function endGame(winner) {
   hideTurnBanner();
   stripHint = ''; renderStrip();
   const col=winner==='P1'?'#7B4A2D':'#B8865A';
-  if (winner==='P1') { p1Score++; localStorage.setItem('trapt17b_p1',p1Score); }
-  else               { p2Score++; localStorage.setItem('trapt17b_p2',p2Score); }
+  const keep = GAME_MODE!=='ONLINE';   // online scores last only for the session
+  if (winner==='P1') { p1Score++; if (keep) localStorage.setItem('trapt17b_p1',p1Score); }
+  else               { p2Score++; if (keep) localStorage.setItem('trapt17b_p2',p2Score); }
   updateScoreDisplay();
   learnFromGame(winner);
   recordLossesFromGame(winner);
@@ -1576,12 +1617,13 @@ function endGame(winner) {
     `<span style="color:${col}">${pName(winner)} wins!</span><br>`+
     `<small style="color:#aaddaa">Opponent had no legal knight move.</small><br>`+
     `<small style="color:#ccffcc">Select NEXT GAME or RESET SCORES below.</small>`;
-  thinkEl.textContent=winner==='P2'?'Myron is satisfied.':'Myron takes notes for next time…';
+  thinkEl.textContent=GAME_MODE==='ONLINE'?'':(winner==='P2'?'Myron is satisfied.':'Myron takes notes for next time…');
 }
 
 function handleCanvasInput(clientX, clientY) {
   if (gameOver) return;
   if (GAME_MODE==='HvM' && curPlayer==='P2') return;
+  if (GAME_MODE==='ONLINE' && (curPlayer!==NET.role || NET.dead)) return;
   const rect=canvas.getBoundingClientRect();
   const scaleX=canvas.width/rect.width, scaleY=canvas.height/rect.height;
   const x=(clientX-rect.left)*scaleX, y=(clientY-rect.top)*scaleY;
@@ -1654,9 +1696,14 @@ function handlePawnTo(i) {
   }
   if (isOcc(i,board,p1K,p2K)) { statusEl.textContent='That square is occupied — choose an empty square.'; return; }
   const val=curPlayer==='P1'?1:2;
+  const from=selPawn;
   board[i]=val; board[selPawn]=0; selPawn=null;
   savedKnight=null;
-  const prev=curPlayer;
+  if (GAME_MODE==='ONLINE') netSend({t:'move', k:(curPlayer==='P1'?p1K:p2K).slice(), pf:from, pt:i});
+  afterPawnMove(curPlayer);
+}
+
+function afterPawnMove(prev) {
   curPlayer=curPlayer==='P1'?'P2':'P1';
   phase='KNIGHT_HEAD';
   setUndoBtn(false);
@@ -1665,6 +1712,8 @@ function handlePawnTo(i) {
 
   if (GAME_MODE==='HvM') {
     if (curPlayer==='P2') showTurnBanner("MYRON'S TURN", '#B8865A');
+  } else if (GAME_MODE==='ONLINE') {
+    showTurnBanner(curPlayer===NET.role ? 'YOUR TURN' : pName(curPlayer).toUpperCase()+"'S TURN", curPlayer==='P1'?'#7B4A2D':'#B8865A');
   } else {
     showTurnBanner(pName(curPlayer).toUpperCase()+"'S TURN", curPlayer==='P1'?'#7B4A2D':'#B8865A');
   }
@@ -1737,6 +1786,7 @@ function startGame(first) {
 }
 
 function nextGame() {
+  if (GAME_MODE==='ONLINE') { if (gameOver && !NET.dead) onlineNext(true); return; }
   // After a finished game, ask who should move first in the next one.
   if (gameOver) { openFirstModal(); return; }
   // Mid-game restart keeps the original behaviour.
@@ -2035,17 +2085,184 @@ function resetForNextGame(first) {
 
 function resetScores() {
   p1Score=0; p2Score=0;
+  if (GAME_MODE==='ONLINE') { netSend({t:'reset'}); updateScoreDisplay(); return; }
   localStorage.setItem('trapt17b_p1',0);
   localStorage.setItem('trapt17b_p2',0);
   updateScoreDisplay();
 }
 
+
+/* ============================================================
+   ONLINE PLAY (person against person, two devices)
+   The host's device and the guest's device each run the same game.
+   Only one small message crosses the internet per turn: the knight's
+   four squares plus the pawn's from/to squares. Each side re-checks
+   every incoming move against the rules before using it.
+   The connection is made by a free public matchmaking service
+   (PeerJS), loaded only when someone chooses HOST or JOIN, so the
+   rest of the game never depends on it. Host = internal seat P1.
+   ============================================================ */
+const NET = { peer: null, conn: null, role: null, names: { P1: '', P2: '' }, lastFirst: null, dead: false };
+const PEER_SRC = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
+const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+function $id(x) { return document.getElementById(x); }
+function netName(p) { const n = NET.names[p] || (p === 'P1' ? 'Host' : 'Guest'); return p === 'P1' ? n + ' (host)' : n; }
+function cleanName(v) { return String(v || '').replace(/[<>&"']/g, '').replace(/\s+/g, ' ').trim().slice(0, 12); }
+function onMsg(t) { $id('onMsg').textContent = t || ''; }
+function peerOpts() { return window.TRAPT_PEER_CFG || {}; }
+
+function showOnline() {
+  $id('onlineDiv').style.display = 'flex';
+  $id('onChoose').style.display = 'flex';
+  $id('onJoin').style.display = 'none'; $id('onHost').style.display = 'none';
+  onMsg('');
+}
+function onlineShowJoin() { $id('onChoose').style.display = 'none'; $id('onJoin').style.display = 'flex'; onMsg(''); }
+function onlineBack() { onlineLeave(); $id('onlineDiv').style.display = 'none'; }
+
+function loadPeerLib(ok, fail) {
+  if (window.Peer) { ok(); return; }
+  const sc = document.createElement('script');
+  sc.src = PEER_SRC; sc.onload = ok;
+  sc.onerror = () => fail('Could not reach the connection service. Check your internet and try again.');
+  document.head.appendChild(sc);
+}
+
+function onlineHost() {
+  const nm = cleanName($id('onName').value);
+  if (!nm) { onMsg('TYPE YOUR NAME FIRST'); return; }
+  onlineLeave();
+  NET.names.P1 = nm; NET.role = 'P1'; NET.dead = false;
+  onMsg('Connecting…');
+  loadPeerLib(() => makeHostPeer(0), onMsg);
+}
+function makeHostPeer(tries) {
+  let code = ''; for (let i = 0; i < 4; i++) code += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+  const peer = new Peer('trapt7b-' + code, peerOpts());
+  NET.peer = peer;
+  peer.on('open', () => {
+    $id('onChoose').style.display = 'none'; $id('onJoin').style.display = 'none';
+    $id('onHost').style.display = 'flex'; $id('onCodeShow').textContent = code; onMsg('');
+  });
+  peer.on('connection', c => {
+    if (NET.conn) { c.close(); return; }
+    NET.conn = c; wireConn(c);
+  });
+  peer.on('error', e => {
+    if (e.type === 'unavailable-id' && tries < 5) { peer.destroy(); makeHostPeer(tries + 1); }
+    else onMsg('Connection problem (' + (e.type || 'unknown') + '). Try again.');
+  });
+}
+
+function onlineJoin() {
+  const nm = cleanName($id('onName').value);
+  const code = $id('onCode').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!nm) { onMsg('TYPE YOUR NAME FIRST'); return; }
+  if (code.length !== 4) { onMsg('ENTER THE 4-CHARACTER CODE'); return; }
+  onlineLeave();
+  NET.names.P2 = nm; NET.role = 'P2'; NET.dead = false;
+  onMsg('Connecting…');
+  loadPeerLib(() => {
+    const peer = new Peer(peerOpts());
+    NET.peer = peer;
+    let done = false;
+    const t = setTimeout(() => { if (!done) onMsg('Could not connect. Check the code and try again.'); }, 12000);
+    peer.on('open', () => {
+      const c = peer.connect('trapt7b-' + code, { reliable: true });
+      NET.conn = c; wireConn(c);
+      c.on('open', () => { done = true; clearTimeout(t); netSend({ t: 'hello', name: nm }); });
+    });
+    peer.on('error', e => {
+      clearTimeout(t);
+      onMsg(e.type === 'peer-unavailable' ? 'No game found with that code.' : 'Connection problem (' + (e.type || 'unknown') + '). Try again.');
+    });
+  }, onMsg);
+}
+
+function wireConn(c) {
+  c.on('data', onNetData);
+  c.on('close', () => { if (NET.conn === c) onNetClosed(); });
+  c.on('error', () => { if (NET.conn === c) onNetClosed(); });
+}
+function netSend(o) { try { if (NET.conn && NET.conn.open) NET.conn.send(o); } catch (e) {} }
+
+function onNetClosed() {
+  NET.dead = true;
+  if (GAME_MODE !== 'ONLINE') { onMsg('Opponent left before the game began.'); return; }
+  const other = netName(NET.role === 'P1' ? 'P2' : 'P1');
+  statusEl.innerHTML = `${other} disconnected.<br><small style="color:#ccffcc">Select CHANGE MODE to leave.</small>`;
+  showTurnBanner(other.toUpperCase() + ' LEFT', '#ff9966');
+}
+
+function validCells(a) { return Array.isArray(a) && a.length === 4 && a.every(v => Number.isInteger(v) && v >= 0 && v < 25); }
+function onNetData(d) {
+  if (!d || typeof d.t !== 'string') return;
+  if (d.t === 'hello' && NET.role === 'P1') {
+    NET.names.P2 = cleanName(d.name) || 'Guest';
+    netSend({ t: 'welcome', host: NET.names.P1, guest: NET.names.P2 });
+    const first = Math.random() < 0.5 ? 'P1' : 'P2';
+    NET.lastFirst = first;
+    netSend({ t: 'start', first });
+    startOnline(first);
+  } else if (d.t === 'welcome' && NET.role === 'P2') {
+    NET.names.P1 = cleanName(d.host) || 'Host';
+    NET.names.P2 = cleanName(d.guest) || NET.names.P2;
+  } else if (d.t === 'start' && NET.role === 'P2' && (d.first === 'P1' || d.first === 'P2')) {
+    NET.lastFirst = d.first; startOnline(d.first);
+  } else if (d.t === 'next') {
+    if (GAME_MODE === 'ONLINE' && gameOver) onlineNext(false);
+  } else if (d.t === 'reset') {
+    p1Score = 0; p2Score = 0; updateScoreDisplay();
+  } else if (d.t === 'move') {
+    applyRemoteMove(d);
+  }
+}
+
+function startOnline(first) {
+  GAME_MODE = 'ONLINE'; p1Score = 0; p2Score = 0;
+  startGame(first);
+  showTurnBanner(first === NET.role ? 'YOUR TURN' : pName(first).toUpperCase() + "'S TURN", first === 'P1' ? '#7B4A2D' : '#B8865A');
+}
+function onlineNext(send) {
+  const first = NET.lastFirst === 'P1' ? 'P2' : 'P1';
+  NET.lastFirst = first;
+  if (send) netSend({ t: 'next' });
+  resetForNextGame(first);
+  showTurnBanner(first === NET.role ? 'YOUR TURN' : pName(first).toUpperCase() + "'S TURN", first === 'P1' ? '#7B4A2D' : '#B8865A');
+}
+
+function applyRemoteMove(d) {
+  if (GAME_MODE !== 'ONLINE' || gameOver || curPlayer === NET.role) return;
+  if (!validCells(d.k) || !Number.isInteger(d.pf) || !Number.isInteger(d.pt)) return;
+  const shapes = allShapes(curPlayer, board, p1K, p2K);
+  if (!shapes.some(sh => sh.every((v, i) => v === d.k[i]))) return;
+  const val = curPlayer === 'P1' ? 1 : 2;
+  setK(curPlayer, d.k.slice());
+  if (d.pf < 0 || d.pf > 24 || d.pt < 0 || d.pt > 24 || board[d.pf] !== val || isOcc(d.pt, board, p1K, p2K)) { drawAll(); return; }
+  board[d.pt] = val; board[d.pf] = 0;
+  afterPawnMove(curPlayer);
+}
+
+function onlineLeave() {
+  try { if (NET.conn) { const c = NET.conn; NET.conn = null; c.close(); } } catch (e) {}
+  try { if (NET.peer) { const p = NET.peer; NET.peer = null; p.destroy(); } } catch (e) {}
+  NET.role = null; NET.dead = false; NET.lastFirst = null;
+  if (GAME_MODE === 'ONLINE') {
+    GAME_MODE = 'HvM';
+    p1Score = parseInt(localStorage.getItem('trapt17b_p1') || '0');
+    p2Score = parseInt(localStorage.getItem('trapt17b_p2') || '0');
+    updateScoreDisplay();
+  }
+}
+
 function goHome() {
+  onlineLeave();
   document.getElementById('game').style.display='none';
   document.getElementById('pregame').style.display='flex';
   document.getElementById('modeDiv').style.display='none';
   document.getElementById('diffDiv').style.display='none';
   document.getElementById('firstDiv').style.display='none';
+  document.getElementById('onlineDiv').style.display='none';
   document.getElementById('instructions-panel').style.display='none';
   hideTurnBanner();
   thinkEl.textContent=''; statusEl.textContent='Waiting…';
