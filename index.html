@@ -78,6 +78,27 @@ body { background: #1a5c2a; color: #ffffff; font-family: 'Courier New', monospac
 #firstModal p { font-size: clamp(11px, 3vw, 14px); letter-spacing: 2px; color: #ccffcc; font-weight: bold; }
 #firstModal .btn { width: 100%; }
 
+/* MOVE STRIP "ON" WINDOW */
+#stripModal {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.68);
+  display: none; align-items: center; justify-content: center;
+  z-index: 330; padding: 16px;
+}
+#stripModal.show { display: flex; }
+#stripModal .modal-card {
+  background: #123d1c; border: 3px solid #ffffff;
+  padding: 20px 18px; display: flex; flex-direction: column;
+  align-items: stretch; gap: 12px; width: min(420px, 94vw);
+  box-shadow: 0 0 40px rgba(0,0,0,0.75);
+}
+#stripModal h2 { font-size: clamp(18px, 5vw, 22px); letter-spacing: 4px; text-align: center; }
+#stripModal .sub { font-size: 12px; letter-spacing: 1px; color: #ccffcc; text-align: center; line-height: 1.5; }
+#stripDefs { background: #eeeeee; color: #000000; padding: 10px 12px; font-size: 13px; line-height: 1.8; font-weight: bold; }
+#stripDefs > div { display: flex; gap: 10px; }
+#stripDefs b { flex: 0 0 4.6em; }
+#stripDefs span { flex: 1 1 auto; }
+#stripModal .btn { width: 100%; padding: 12px 10px; }
+
 /* EXPORT / IMPORT BRAIN MODAL */
 #brainModal {
   position: fixed; inset: 0; background: rgba(0,0,0,0.68);
@@ -200,6 +221,21 @@ canvas { border: 4px solid #000000; cursor: pointer; display: block; touch-actio
   </div>
 </div>
 
+</div>
+
+<!-- MOVE STRIP "ON" WINDOW -->
+<div id="stripModal" role="dialog" aria-modal="true" aria-labelledby="stripTitle" onclick="if(event.target===this)closeStripModal()">
+  <div class="modal-card">
+    <h2 id="stripTitle">MOVE STRIP ON</h2>
+    <p class="sub">During a game against Myron, the strip lists each of his moves in order. What the codes mean:</p>
+    <div id="stripDefs">
+      <div><b>R</b><span>Random move</span></div>
+      <div><b>T1&ndash;T5</b><span>One of his top 5 ranked moves (T1 = best, T5 = fifth best)</span></div>
+      <div><b>B</b><span>His single best move</span></div>
+      <div><b>d1, d2</b><span>How many moves ahead he looked</span></div>
+    </div>
+    <button class="btn" onclick="closeStripModal()">CLOSE</button>
+  </div>
 </div>
 
 <!-- EXPORT / IMPORT BRAIN MODAL -->
@@ -1907,8 +1943,10 @@ function resetStrip() { moveHistory = []; pendingStripMeta = null; renderStrip()
 function toggleStrip() {
   stripOn = !stripOn;
   renderStrip();
-  showTurnBanner('MOVE STRIP ' + (stripOn ? 'ON' : 'OFF'), '#aaddaa');
+  if (stripOn) document.getElementById('stripModal').classList.add('show');
+  else showTurnBanner('MOVE STRIP OFF', '#aaddaa');
 }
+function closeStripModal() { document.getElementById('stripModal').classList.remove('show'); }
 let titleTapCount = 0, titleTapTimer = null;
 function titleTapped() {
   titleTapCount++;
